@@ -19,6 +19,23 @@ const env = {
 	filePath: null
 };
 
+// Single instance (SoundApp behavior): a second OS open forwards the file
+// to the running window instead of booting a new instance.
+let mainWin = null;
+if (app.requestSingleInstanceLock()) {
+	app.on('second-instance', (e, argv) => {
+		const fp = argv.find(a => /\.(md|markdown)$/i.test(a) && fs.existsSync(a));
+		if (mainWin) {
+			if (mainWin.isMinimized()) mainWin.restore();
+			mainWin.focus();
+			if (fp) mainWin.webContents.send('os-open-file', path.resolve(fp));
+		}
+	});
+	init().catch(err => { console.error('main : FATAL', err); app.exit(1); });
+} else {
+	app.quit();
+}
+
 if (env.isPackaged) {
 	if (process.env.PORTABLE_EXECUTABLE_DIR) {
 		env.base_path = process.env.PORTABLE_EXECUTABLE_DIR;
@@ -28,8 +45,6 @@ if (env.isPackaged) {
 		env.base_path = ar.join(path.sep) + path.sep;
 	}
 }
-
-init().catch(err => { console.error('main : FATAL', err); app.exit(1); });
 
 // ################################# WINDOW STATE (SoundApp pattern)
 
@@ -85,7 +100,7 @@ async function init() {
 	await app.whenReady();
 
 	const state = loadWindowState();
-	const win = await helper.tools.browserWindow('frameless', {
+	mainWin = await helper.tools.browserWindow('frameless', {
 		webPreferences: { preload: path.join(__dirname, '../modules/electron_helper/helper_new.js') },
 		devTools: !env.isPackaged,
 		width: state?.width ?? 1100,
@@ -93,11 +108,11 @@ async function init() {
 		...(typeof state?.x === 'number' ? { x: state.x, y: state.y } : {}),
 		file: 'app/index.html'
 	});
-	trackWindowState(win);
+	trackWindowState(mainWin);
 
 	// Renderer console → terminal (dev visibility)
 	if (!env.isPackaged) {
-		win.webContents.on('console-message', (e, level, message) => { console.log('stage :', message); });
+		mainWin.webContents.on('console-message', (e, level, message) => { console.log('stage :', message); });
 	}
 
 	Menu.setApplicationMenu(null);

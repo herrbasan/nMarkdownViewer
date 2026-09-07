@@ -16,7 +16,11 @@
 		// nodeIntegration; ESM renderer scripts cannot import node builtins).
 		// Preload sets window.electron_helper first, so this is browser-safe.
 		if (window.electron_helper) {
-			window.nmdv_node = { fsp: require('node:fs/promises'), path: require('node:path') };
+			window.nmdv_node = {
+				fsp: require('node:fs/promises'),
+				path: require('node:path'),
+				ipcRenderer: require('electron').ipcRenderer
+			};
 		}
 	</script>
 	<script src="js/app.js" type="module"></script>

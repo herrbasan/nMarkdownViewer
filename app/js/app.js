@@ -141,6 +141,13 @@ async function bootElectron() {
 	const fp = g.mainEnv.isPackaged ? g.npath.dirname(g.mainEnv.app_path) : g.mainEnv.app_path;
 	g.config = await electron_helper.tools.readJSON(g.npath.join(fp, 'config.json'));
 	electron_helper.window.show();
+
+	// Single-instance handoff: the main process forwards OS-opened files
+	window.nmdv_node.ipcRenderer.on('os-open-file', async (e, filePath) => {
+		const dir = g.npath.dirname(filePath);
+		await rootTree({ name: g.npath.basename(dir), fs: nativeFsAdapter(), rootPath: dir });
+		await openTreePath(filePath);
+	});
 }
 
 // Sets disabled on BOTH the nui-button wrapper and its inner native button
