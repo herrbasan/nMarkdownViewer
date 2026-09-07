@@ -92,13 +92,6 @@ nui-file-tree#file-tree {
 	min-height: 0;
 }
 
-/* Edit toggle: icon + label button */
-#btn-edit button {
-	display: flex;
-	align-items: center;
-	gap: var(--nui-space-quarter);
-}
-
 /* Content column: nui-main scrolls (NUI provides overflow-y:auto),
    the player docks in its own container below it. */
 nui-content {
