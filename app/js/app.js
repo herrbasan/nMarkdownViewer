@@ -27,7 +27,7 @@ const g = {
 };
 
 const el = {};
-for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-refresh', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status']) {
+for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-collapse', 'btn-refresh', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status']) {
 	el[id] = document.getElementById(id);
 }
 
@@ -69,6 +69,12 @@ async function boot() {
 	el['btn-open-folder'].addEventListener('click', openFolder);
 	el['btn-open-file'].addEventListener('click', openFile);
 	el['btn-refresh'].addEventListener('click', () => el['file-tree'].refresh());
+	el['btn-collapse'].addEventListener('click', () => el['file-tree'].collapseAll());
+	el['tree-search'].addEventListener('nui-input', (e) => {
+		const q = (e.detail?.value ?? el['tree-search'].querySelector('input').value).trim();
+		el['file-tree'].filter = q || null;
+	});
+	el['tree-search'].addEventListener('nui-clear', () => { el['file-tree'].filter = null; });
 	el['btn-edit'].addEventListener('click', toggleEdit);
 	el['btn-save'].addEventListener('click', writeFile);
 	el['btn-listen'].addEventListener('click', listen);
@@ -150,6 +156,7 @@ async function openFolder() {
 	tree.setProvider(g.fs.readdir);
 	await tree.setRoot({ name: handle.name, path: '' });
 	setBtn('btn-refresh', false);
+	setBtn('btn-collapse', false);
 	status(`Folder: ${handle.name}`);
 }
 

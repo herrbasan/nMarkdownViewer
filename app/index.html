@@ -50,11 +50,19 @@
 					<nui-button variant="icon" id="btn-open-file">
 						<button type="button" aria-label="Open file"><nui-icon name="draft"></nui-icon></button>
 					</nui-button>
+					<nui-button variant="icon" id="btn-collapse">
+						<button type="button" aria-label="Collapse all" disabled><nui-icon name="unfold_less"></nui-icon></button>
+					</nui-button>
 					<nui-button variant="icon" id="btn-refresh">
 						<button type="button" aria-label="Refresh tree" disabled><nui-icon name="refresh"></nui-icon></button>
 					</nui-button>
 				</div>
-				<nui-file-tree id="file-tree" aria-label="Files" selectable="files">
+				<div id="sidebar-search">
+					<nui-input id="tree-search" clearable>
+						<input type="text" placeholder="Filter files…" aria-label="Filter files">
+					</nui-input>
+				</div>
+				<nui-file-tree id="file-tree" aria-label="Files" selectable="files" density="compact">
 					<nav></nav>
 				</nui-file-tree>
 			</nav>

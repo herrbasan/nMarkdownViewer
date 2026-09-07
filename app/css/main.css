@@ -36,8 +36,13 @@ html, body {
 	width: 100%;
 }
 
+#sidebar-search {
+	padding: var(--nui-space-half);
+	border-bottom: var(--border-thickness) solid var(--border-shade2);
+}
+
 nui-file-tree#file-tree {
-	height: calc(100% - 3rem);
+	height: calc(100% - 6.5rem);
 	overflow-y: auto;
 }
 
