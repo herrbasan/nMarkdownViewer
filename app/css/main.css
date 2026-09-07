@@ -17,6 +17,25 @@ html, body {
 	content: ' •';
 }
 
+/* Sidebar: tools fixed, tree list scrolls its own content.
+   MUST be the direct child only — a bare `nui-sidebar nav` selector would
+   also hit the file-tree's own inner <nav> and clip its content invisibly. */
+nui-sidebar > nav {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+}
+
+#sidebar-tools, #sidebar-search {
+	flex: none;
+}
+
+nui-file-tree#file-tree {
+	flex: 1;
+	min-height: 0;
+}
+
 #sidebar-tools {
 	display: flex;
 	align-items: center;
@@ -41,31 +60,27 @@ html, body {
 	border-bottom: var(--border-thickness) solid var(--border-shade2);
 }
 
-nui-file-tree#file-tree {
-	height: calc(100% - 6.5rem);
-	overflow-y: auto;
-}
-
 #welcome {
 	padding: var(--nui-space-double) 0;
 }
 
 #editor {
-	flex: 1;
-	min-height: 0;
+	height: 100%;
 }
 
-/* Content column: page scrolls, player docked at the bottom */
-nui-content main {
+/* Content column: nui-main scrolls (NUI provides overflow-y:auto),
+   the player docks in its own container below it. */
+nui-content {
 	display: flex;
 	flex-direction: column;
-	overflow: hidden;
 }
 
-nui-page#page {
+/* Override NUI's absolute inset on nui-main so it becomes the flex child.
+   ID specificity beats NUI's nui-app[data-layout] selector. */
+nui-main#md-main {
+	position: relative;
 	flex: 1;
 	min-height: 0;
-	overflow-y: auto;
 }
 
 #tts-mount {
