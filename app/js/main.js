@@ -6,7 +6,7 @@
 
 if (require('electron-squirrel-startup')) return;
 
-const { app, Menu } = require('electron');
+const { app, Menu, screen } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -31,6 +31,43 @@ if (env.isPackaged) {
 
 init().catch(err => { console.error('main : FATAL', err); app.exit(1); });
 
+// ################################# WINDOW STATE (SoundApp pattern)
+
+const statePath = path.join(app.getPath('userData'), 'window-state.json');
+
+function loadWindowState() {
+	try {
+		const s = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+		if (typeof s.width !== 'number' || typeof s.height !== 'number') return null;
+		// Saved position must still be on a connected display (monitors change)
+		if (typeof s.x === 'number' && typeof s.y === 'number') {
+			const onScreen = screen.getAllDisplays().some(d =>
+				s.x >= d.bounds.x && s.x < d.bounds.x + d.bounds.width &&
+				s.y >= d.bounds.y && s.y < d.bounds.y + d.bounds.height);
+			if (!onScreen) { delete s.x; delete s.y; }
+		}
+		return s;
+	} catch {
+		return null;
+	}
+}
+
+function trackWindowState(win) {
+	let timer = null;
+	const save = () => {
+		clearTimeout(timer);
+		timer = setTimeout(() => {
+			fsp.writeFile(statePath, JSON.stringify(win.getBounds())).catch(() => {});
+		}, 500);
+	};
+	win.on('resize', save);
+	win.on('move', save);
+	win.on('close', () => {
+		clearTimeout(timer);
+		try { fs.writeFileSync(statePath, JSON.stringify(win.getBounds())); } catch {}
+	});
+}
+
 async function init() {
 	// File opened via OS (double-click / drag onto icon / CLI arg)
 	const fileArg = process.argv.find(a => /\.(md|markdown)$/i.test(a) && fs.existsSync(a));
@@ -47,13 +84,16 @@ async function init() {
 
 	await app.whenReady();
 
+	const state = loadWindowState();
 	const win = await helper.tools.browserWindow('frameless', {
 		webPreferences: { preload: path.join(__dirname, '../modules/electron_helper/helper_new.js') },
 		devTools: !env.isPackaged,
-		width: 1100,
-		height: 800,
+		width: state?.width ?? 1100,
+		height: state?.height ?? 800,
+		...(typeof state?.x === 'number' ? { x: state.x, y: state.y } : {}),
 		file: 'app/index.html'
 	});
+	trackWindowState(win);
 
 	// Renderer console → terminal (dev visibility)
 	if (!env.isPackaged) {
@@ -65,6 +105,8 @@ async function init() {
 
 // File association (.md/.markdown) in HKCU — per-user, no admin needed.
 // Squirrel installs per-user, so this matches the install scope.
+// DefaultIcon is wired but only written when a real md.ico ships —
+// without it Windows falls back to the app icon (placeholder situation).
 function registerFileAssociation() {
 	const { spawn } = require('node:child_process');
 	const exe = process.execPath;
@@ -75,6 +117,10 @@ function registerFileAssociation() {
 		[`HKCU\\Software\\Classes\\${progid}`, '/ve', '/d', 'Markdown Document'],
 		[`HKCU\\Software\\Classes\\${progid}\\shell\\open\\command`, '/ve', '/d', `"${exe}" "%1"`]
 	];
+	const iconFp = path.join(path.dirname(exe), 'resources', 'icons', 'md.ico');
+	if (fs.existsSync(iconFp)) {
+		cmds.push([`HKCU\\Software\\Classes\\${progid}\\DefaultIcon`, '/ve', '/d', iconFp]);
+	}
 	for (const [key, ...rest] of cmds) {
 		const child = spawn('reg', ['add', key, ...rest, '/f'], { windowsHide: true });
 		child.on('error', err => console.error('main : file association failed for', key, err.message));

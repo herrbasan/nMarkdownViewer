@@ -8,7 +8,7 @@ module.exports = {
 			'^/app/modules/nui_wc2/.git$', '^/app/modules/electron_helper/.git$',
 			'^/app/modules/nui_wc2/Playground$'
 		],
-		extraResource: ['config.json'],
+		extraResource: ['config.json', './build/icons/'],
 		executableName: 'nmarkdownviewer',
 		icon: path.join(__dirname, 'build', 'icons', 'nui-icon-app-fullscreen.ico')
 	},
