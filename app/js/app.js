@@ -107,6 +107,9 @@ async function boot() {
 	});
 	g.playerHost.attach();
 
+	// Explorer sidebar starts open (breakpoint "none" leaves it closed initially)
+	document.querySelector('nui-app').toggleSidebar('left');
+
 	status(g.tts.available ? 'Ready. Open a folder to begin.' : `nSpeech unreachable at ${g.config.nspeech.baseUrl} — TTS disabled`);
 
 	window.nmdv = g; // dev console access (single-user desktop app)
@@ -237,6 +240,9 @@ function loadDocument(handle, name, text) {
 	setMode('view');
 	renderView();
 	document.getElementById('md-main').scrollTop = 0; // new document starts at the top
+	// Explorer auto-hide: close an overlay sidebar once a file is open
+	const app = document.querySelector('nui-app');
+	if (app.classList.contains('sidebar-open')) app.toggleSidebar('left');
 	setTitle(name);
 	setBtn('btn-edit', false);
 	setBtn('btn-save', false);
