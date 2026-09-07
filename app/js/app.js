@@ -8,7 +8,6 @@ import '../modules/nui_wc2/NUI/nui.js';
 import { appWindow } from '../modules/nui_wc2/NUI/lib/modules/nui-app-window.js';
 import '../modules/nui_wc2/NUI/lib/modules/nui-file-tree.js';
 import '../modules/nui_wc2/NUI/lib/modules/nui-rich-text.js';
-import { contextMenu } from '../modules/nui_wc2/NUI/lib/modules/nui-context-menu.js';
 import { htmlToMarkdown } from './md-serializer.js';
 import { createTts } from './tts.js';
 import { TtsPlayerHost } from './lib/tts-player.js';
@@ -29,7 +28,7 @@ const g = {
 };
 
 const el = {};
-for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open', 'btn-collapse', 'btn-refresh', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status']) {
+for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-collapse', 'btn-refresh', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status']) {
 	el[id] = document.getElementById(id);
 }
 
@@ -40,6 +39,7 @@ boot().catch(err => {
 
 async function boot() {
 	if (window.electron_helper) {
+		document.body.classList.add('electron'); // hides Open File (OS provides it)
 		throw new Error('Electron shell not implemented yet — see docs/nMarkdownViewer_SPEC.md M5');
 	}
 
@@ -65,7 +65,8 @@ async function boot() {
 		return true;
 	});
 
-	el['btn-open'].addEventListener('click', openUnified);
+	el['btn-open-folder'].addEventListener('click', openFolder);
+	el['btn-open-file'].addEventListener('click', openFile);
 	el['btn-refresh'].addEventListener('click', () => el['file-tree'].refresh());
 	el['btn-collapse'].addEventListener('click', () => el['file-tree'].collapseAll());
 	el['tree-search'].addEventListener('nui-input', (e) => {
@@ -146,24 +147,6 @@ function fsAccessAdapter(rootHandle) {
 	};
 }
 
-// Unified open: one entry point. File → open it (and select it in the tree
-// when it's inside the current root). Folder → root the tree there and open
-// its first Markdown file. Same semantics for button, drop, and (M5) the OS.
-function openUnified(e) {
-	const menu = contextMenu([
-		{ label: 'File…', action: 'file', icon: 'description' },
-		{ label: 'Folder…', action: 'folder', icon: 'folder_open' }
-	], {
-		onAction: (action) => {
-			if (action === 'file') openFile();
-			if (action === 'folder') openFolder();
-		}
-	});
-	// Defer a tick: the module's click-outside listener attaches during show
-	// and would otherwise fire for THIS click, closing the menu instantly
-	// (nui_wc2#27).
-	setTimeout(() => menu.showAt(el['btn-open']), 0);
-}
 
 async function openFolder() {
 	if (!window.showDirectoryPicker) {

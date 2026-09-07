@@ -111,12 +111,14 @@ YAML frontmatter never enters the editor: it is split off with
 - **Folder** → root the tree there, then open its first Markdown file
   (alphabetical).
 
-- **Browser phase:** File System Access API. One **Open** button with a
-  File…/Folder… choice menu (the two pickers are separate APIs; Electron
-  collapses them into one dialog). A picked/dropped file does **not** expose
-  its parent folder (platform security design) — rooting the tree at the
-  file's folder only works in Electron via `path.dirname`. Folder drops work
-  via `getAsFileSystemHandle()`.
+- **Browser phase:** File System Access API. Two labeled buttons side by
+  side — **Open Folder** / **Open File** — which also works for a plain
+  web deployment. In Electron, **Open File** is hidden (`body.electron`)
+  because the OS provides file opening (double-click, association).
+  A picked/dropped file does **not** expose its parent folder (platform
+  security design) — rooting the tree at the file's folder only works in
+  Electron via `path.dirname`. Folder drops work via
+  `getAsFileSystemHandle()`.
 - **Electron phase (M5):** one `showOpenDialog` with `openFile` +
   `openDirectory`; file path → root tree at `path.dirname(file)` + open it.
   The File System Access path stays as fallback.

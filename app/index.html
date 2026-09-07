@@ -10,7 +10,6 @@
 	<link rel="stylesheet" href="modules/nui_wc2/NUI/css/modules/nui-file-tree.css">
 	<link rel="stylesheet" href="modules/nui_wc2/NUI/css/modules/nui-rich-text.css">
 	<link rel="stylesheet" href="modules/nui_wc2/NUI/css/modules/nui-syntax-highlight.css">
-	<link rel="stylesheet" href="modules/nui_wc2/NUI/css/modules/nui-context-menu.css">
 	<link rel="stylesheet" href="css/main.css">
 	<script src="js/app.js" type="module"></script>
 </head>
@@ -46,8 +45,11 @@
 		<nui-sidebar behavior="primary">
 			<nav>
 				<div id="sidebar-tools">
-					<nui-button variant="ghost" id="btn-open">
-						<button type="button"><nui-icon name="folder_open"></nui-icon> Open</button>
+					<nui-button variant="ghost" id="btn-open-folder">
+						<button type="button"><nui-icon name="folder_open"></nui-icon> Open Folder</button>
+					</nui-button>
+					<nui-button variant="ghost" id="btn-open-file">
+						<button type="button"><nui-icon name="description"></nui-icon> Open File</button>
 					</nui-button>
 					<nui-button variant="icon" id="btn-collapse">
 						<button type="button" aria-label="Collapse all" disabled><nui-icon name="unfold_less"></nui-icon></button>

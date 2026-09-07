@@ -44,16 +44,23 @@ nui-file-tree#file-tree {
 	border-bottom: var(--border-thickness) solid var(--border-shade2);
 }
 
-#sidebar-tools #btn-open {
+#sidebar-tools #btn-open-folder,
+#sidebar-tools #btn-open-file {
 	flex: 1;
 }
 
-#sidebar-tools #btn-open button {
+#sidebar-tools #btn-open-folder button,
+#sidebar-tools #btn-open-file button {
 	display: flex;
 	align-items: center;
 	justify-content: flex-start;
 	gap: var(--nui-space-quarter);
 	width: 100%;
+}
+
+/* Electron provides file opening via the OS (double-click) — hide the button */
+body.electron #btn-open-file {
+	display: none;
 }
 
 #sidebar-search {
