@@ -107,9 +107,6 @@ async function boot() {
 	});
 	g.playerHost.attach();
 
-	// Explorer sidebar starts open (breakpoint "none" leaves it closed initially)
-	document.querySelector('nui-app').toggleSidebar('left');
-
 	status(g.tts.available ? 'Ready. Open a folder to begin.' : `nSpeech unreachable at ${g.config.nspeech.baseUrl} — TTS disabled`);
 
 	window.nmdv = g; // dev console access (single-user desktop app)
