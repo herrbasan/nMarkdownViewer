@@ -60,8 +60,10 @@ nui-file-tree#file-tree {
 	border-bottom: var(--border-thickness) solid var(--border-shade2);
 }
 
+/* No padding here — nui-page's child rule owns it (--nui-space vertical,
+   --nui-space-double horizontal). Just center like the viewer. */
 #welcome {
-	padding: var(--nui-space-double) 0;
+	margin-inline: auto;
 }
 
 /* nui-markdown's host is inline by default (no display rule in nui-theme.css —
