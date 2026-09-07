@@ -228,6 +228,7 @@ async function openFolder() {
 
 async function rootTree(root) {
 	g.fs = root.fs;
+	g.rootPath = root.rootPath;
 	const tree = el['file-tree'];
 	tree.setProvider(g.fs.readdir);
 	await tree.setRoot({ name: root.name, path: root.rootPath });
@@ -238,7 +239,7 @@ async function rootTree(root) {
 
 // Open the alphabetically first Markdown file in the tree root.
 async function openFirstMarkdown() {
-	const entries = await g.fs.readdir('');
+	const entries = await g.fs.readdir(g.rootPath);
 	const first = entries
 		.filter(e => e.kind === 'file' && /\.(md|markdown)$/i.test(e.name))
 		.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))[0];

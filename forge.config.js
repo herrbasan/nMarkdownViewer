@@ -3,7 +3,11 @@ const path = require('path');
 module.exports = {
 	packagerConfig: {
 		asar: true,
-		ignore: ['^/docs$', '^/scripts$', '^/out$', '^/.vscode$'],
+		ignore: [
+			'^/docs$', '^/scripts$', '^/out$', '^/.vscode$',
+			'^/app/modules/nui_wc2/.git$', '^/app/modules/electron_helper/.git$',
+			'^/app/modules/nui_wc2/Playground$'
+		],
 		extraResource: ['config.json'],
 		executableName: 'nmarkdownviewer',
 		icon: path.join(__dirname, 'build', 'icons', 'nui-icon-app-fullscreen.ico')
