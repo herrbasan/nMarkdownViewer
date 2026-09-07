@@ -352,7 +352,12 @@ function ttsState(state, time) {
 			icon.setAttribute('name', 'play_circle');
 			break;
 		case 'time':
-			if (g.tts.isActive()) progress.textContent = fmt(time);
+			if (!g.tts.isActive()) break;
+			if (!time.downloadComplete && !time.currentTime) {
+				progress.textContent = `Receiving… ${(time.bytesReceived / 1024) | 0} KB`;
+			} else {
+				progress.textContent = fmt(time.currentTime) + (time.duration ? ` / ${fmt(time.duration)}` : '');
+			}
 			break;
 		case 'idle':
 			stop.classList.remove('active');

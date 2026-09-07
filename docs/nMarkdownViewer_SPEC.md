@@ -144,9 +144,11 @@ YAML frontmatter never enters the editor: it is split off with
   dirty-state UX, save-as, keyboard shortcuts (Ctrl+S, Ctrl+E).
 - [ ] **M4 — TTS polish.** Chunk progress details in status bar (SpeechPlayer
   already streams + pauses), listen-from-position, engine-switch messaging.
-  Note: 2026-09-07 nSpeech local workers (f5tts AND kokoro) returned
-  `worker_error` 500s despite "ready" state — server-side issue on Badkid,
-  verified client-side correct. Recheck when the server is fixed.
+  RESOLVED 2026-09-07: the `worker_error` 500s were **client-side** — nSpeech
+  engines require an explicit voice; there is no working `default`. The pane
+  now auto-selects the first real voice (chat-controller pattern) and refuses
+  to send without one. Known server data issue: the `AllanF5` voice entry is
+  listed but 404s on synthesis (stale cache on Badkid).
 - [ ] **M5 — Electron shell.** electron_blank-derived main process,
   `electron_helper` submodule, file association (double-click `.md`), argv
   handoff, native read/write, window state. Package with electron-forge.

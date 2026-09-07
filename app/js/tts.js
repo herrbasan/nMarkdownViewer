@@ -152,6 +152,7 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 	function updateVoiceSelect() {
 		const voices = t.voicesByEngine.get(t.engine) || [];
 		if (!voices.length) {
+			t.voice = '';
 			el.voice.setItems([{ value: '', label: 'No voices available' }]);
 			return;
 		}
@@ -160,15 +161,20 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 			const d = (featured(a) ? 0 : 1) - (featured(b) ? 0 : 1);
 			return d || String(a.name || a.voice_id).localeCompare(String(b.name || b.voice_id));
 		});
-		const items = [
-			{ value: '', label: 'Default voice' },
-			...sorted.map(v => ({
-				value: v.voice_id || v.name,
-				label: (featured(v) ? '★ ' : '') + (v.name || v.voice_id)
-			}))
-		];
+		const items = sorted.map(v => ({
+			value: v.voice_id || v.name,
+			label: (featured(v) ? '★ ' : '') + (v.name || v.voice_id)
+		}));
 		el.voice.setItems(items);
-		el.voice.setValue(items.some(i => i.value === t.voice) ? t.voice : '');
+		// nSpeech engines require an explicit voice — there is no working
+		// 'default' (zero-shot cloning engines 500 without a reference).
+		// Mirror the chat controller: auto-select the first voice when the
+		// stored one is missing or invalid for this engine.
+		if (!items.some(i => i.value === t.voice)) {
+			t.voice = items[0].value;
+			pref.set(PREF.voice, t.voice);
+		}
+		el.voice.setValue(t.voice);
 	}
 
 	function setStatus(msg) {
@@ -182,10 +188,11 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 	// Toggle semantics: same document → pause/resume (or cancel while loading).
 	t.speak = (text) => {
 		if (!t.available) { onStatus?.('TTS unavailable'); return; }
+		if (!t.voice) { onStatus?.('Select a voice first (engine has none)'); return; }
 		t.player.toggle({
 			model: t.engine,
 			input: text,
-			voice: t.voice || 'default',
+			voice: t.voice,
 			format: 'mp3',
 			speed: t.speed,
 			clean: t.clean,
