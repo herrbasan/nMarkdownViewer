@@ -38,14 +38,8 @@ boot().catch(err => {
 });
 
 async function boot() {
-	if (window.electron_helper) {
-		document.body.classList.add('electron'); // hides Open File (OS provides it)
-		throw new Error('Electron shell not implemented yet — see docs/nMarkdownViewer_SPEC.md M5');
-	}
-
-	const res = await fetch('../config.json');
-	if (!res.ok) throw new Error(`config.json unreachable (${res.status}) — run via scripts/serve.js`);
-	g.config = await res.json();
+	if (window.electron_helper) await bootElectron();
+	else await bootBrowser();
 
 	// Window chrome (title bar + status bar) — same in browser and Electron
 	g.win = appWindow({
@@ -108,9 +102,45 @@ async function boot() {
 	});
 	g.playerHost.attach();
 
+	// OS-opened file (double-click / CLI arg): root the tree at its folder, open it
+	if (g.mainEnv?.filePath) {
+		await rootTree({ name: g.npath.basename(g.npath.dirname(g.mainEnv.filePath)), fs: nativeFsAdapter(), rootPath: g.npath.dirname(g.mainEnv.filePath) });
+		await openTreePath(g.mainEnv.filePath);
+	}
+
 	status(g.tts.available ? 'Ready. Open a folder to begin.' : `nSpeech unreachable at ${g.config.nspeech.baseUrl} — TTS disabled`);
 
+	// Dev-only boot beacon: lets smoke tests verify Electron boots headlessly
+	if (g.mainEnv && !g.mainEnv.isPackaged) {
+		const out = g.npath.join(g.mainEnv.app_path, 'out');
+		await g.nfs.mkdir(out, { recursive: true });
+		await g.nfs.writeFile(g.npath.join(out, 'boot-beacon.json'), JSON.stringify({
+			filePath: g.mainEnv.filePath,
+			docLoaded: g.fileName,
+			treeRoot: g.fs ? 'set' : null,
+			treeNodes: el['file-tree']._nodes?.size ?? 0,
+			ttsAvailable: g.tts.available,
+			status: document.getElementById('status-text').textContent
+		}, null, 2));
+	}
+
 	window.nmdv = g; // dev console access (single-user desktop app)
+}
+
+async function bootBrowser() {
+	const res = await fetch('../config.json');
+	if (!res.ok) throw new Error(`config.json unreachable (${res.status}) — run via scripts/serve.js`);
+	g.config = await res.json();
+}
+
+async function bootElectron() {
+	document.body.classList.add('electron'); // hides Open File (OS provides it)
+	g.mainEnv = await electron_helper.global.get('env');
+	g.npath = window.nmdv_node.path;
+	g.nfs = window.nmdv_node.fsp;
+	const fp = g.mainEnv.isPackaged ? g.npath.dirname(g.mainEnv.app_path) : g.mainEnv.app_path;
+	g.config = await electron_helper.tools.readJSON(g.npath.join(fp, 'config.json'));
+	electron_helper.window.show();
 }
 
 // Sets disabled on BOTH the nui-button wrapper and its inner native button
@@ -118,6 +148,29 @@ async function boot() {
 function setBtn(id, disabled) {
 	el[id].toggleAttribute('disabled', disabled);
 	el[id].querySelector('button').disabled = disabled;
+}
+
+// Native fs adapter (Electron): same handle shape the document pipeline
+// already consumes — openTreePath/loadDocument/writeFile work unchanged.
+function nativeFsAdapter() {
+	const fsp = g.nfs, npath = g.npath;
+	return {
+		async readdir(dir) {
+			const dirents = await fsp.readdir(dir, { withFileTypes: true });
+			return dirents.map(d => ({ name: d.name, path: npath.join(dir, d.name), kind: d.isDirectory() ? 'dir' : 'file' }));
+		},
+		async readFileHandle(fp) {
+			return {
+				name: npath.basename(fp),
+				_nmdvPath: fp,
+				getFile: async () => new File([await fsp.readFile(fp, 'utf8')], npath.basename(fp), { type: 'text/markdown' }),
+				createWritable: async () => ({
+					write: async (data) => { await fsp.writeFile(fp, data, 'utf8'); },
+					close: async () => {}
+				})
+			};
+		}
+	};
 }
 
 // ################################# FILE SYSTEM (browser: File System Access API)
@@ -149,6 +202,16 @@ function fsAccessAdapter(rootHandle) {
 
 
 async function openFolder() {
+	if (!await confirmDiscard()) return;
+	if (window.electron_helper) {
+		// Native dialog + native adapter — any path on disk works
+		const result = await electron_helper.dialog.showOpenDialog({ properties: ['openDirectory'], title: 'Open Folder' });
+		if (result.canceled || !result.filePaths?.length) return;
+		const dir = result.filePaths[0];
+		await rootTree({ name: g.npath.basename(dir), fs: nativeFsAdapter(), rootPath: dir });
+		await openFirstMarkdown();
+		return;
+	}
 	if (!window.showDirectoryPicker) {
 		throw new Error('File System Access API unavailable — use Chrome/Edge or the Electron shell');
 	}
@@ -159,20 +222,18 @@ async function openFolder() {
 		if (err.name === 'AbortError') return; // user cancelled — normal variance
 		throw err;
 	}
-	if (!await confirmDiscard()) return;
-	await rootTree(handle);
+	await rootTree({ name: handle.name, fs: fsAccessAdapter(handle), rootPath: '' });
 	await openFirstMarkdown();
 }
 
-async function rootTree(handle) {
-	g.dirHandle = handle;
-	g.fs = fsAccessAdapter(handle);
+async function rootTree(root) {
+	g.fs = root.fs;
 	const tree = el['file-tree'];
 	tree.setProvider(g.fs.readdir);
-	await tree.setRoot({ name: handle.name, path: '' });
+	await tree.setRoot({ name: root.name, path: root.rootPath });
 	setBtn('btn-refresh', false);
 	setBtn('btn-collapse', false);
-	status(`Folder: ${handle.name}`);
+	status(`Folder: ${root.name}`);
 }
 
 // Open the alphabetically first Markdown file in the tree root.
@@ -248,7 +309,7 @@ async function onDrop(e) {
 	// Dropped a folder → same as Open Folder: root the tree, read its first file
 	if (handle?.kind === 'directory') {
 		if (!await confirmDiscard()) return;
-		await rootTree(handle);
+		await rootTree({ name: handle.name, fs: fsAccessAdapter(handle), rootPath: '' });
 		await openFirstMarkdown();
 		return;
 	}

@@ -70,3 +70,28 @@ scripts/serve.js        zero-dep static dev server
 - **nui markdownToHtml XSS caveat** (no URL scheme validation) — fine for local
   files, revisit before ever rendering untrusted content.
 - **nSpeech port/CORS** — see Open Questions in the spec.
+
+## File Association Pattern (M5, for the next major release)
+
+Proper Windows file associations follow the SoundApp pattern
+(`D:\Work\_GIT\SoundApp\js\registry.js`), driven by the user's own
+**windows-native-registry** module (`github.com/herrbasan/windows-native-registry`,
+v3.2.2, native `.node` addon — works via GitHub release binaries, repo currently
+private, to be made public before we depend on it):
+
+1. **Per-filetype ProgID** under `HKCU\Software\Classes\<progid>`:
+   description, `DefaultIcon` (per-extension `.ico`), `shell\open\command` =
+   `"<exe>" "%1"`, plus `OpenWithProgids` entries on each extension.
+2. **Capabilities key** `HKCU\Software\<App>\Capabilities` with
+   `ApplicationName`, `ApplicationDescription`, and a `FileAssociations`
+   subkey mapping every extension → its ProgID.
+3. **RegisteredApplications**: `HKCU\Software\RegisteredApplications`
+   `<App>` → capabilities path. This makes the app appear in Windows'
+   **Default Programs** UI (openable via
+   `control /name Microsoft.DefaultPrograms /page pageDefaultProgram`).
+4. Registration is an explicit settings action (register/unregister),
+   all HKCU — per-user, no admin, matches Squirrel's install scope.
+
+Current state: `app/js/main.js` has a minimal zero-dep version (plain `reg add`
+for `.md`/`.markdown` → ProgID → command, no icons/Capabilities yet). Upgrade
+to the full pattern with `windows-native-registry` once the repo is public.

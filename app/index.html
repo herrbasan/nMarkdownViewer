@@ -11,6 +11,14 @@
 	<link rel="stylesheet" href="modules/nui_wc2/NUI/css/modules/nui-rich-text.css">
 	<link rel="stylesheet" href="modules/nui_wc2/NUI/css/modules/nui-syntax-highlight.css">
 	<link rel="stylesheet" href="css/main.css">
+	<script>
+		// Node bridge for Electron (classic scripts get require with
+		// nodeIntegration; ESM renderer scripts cannot import node builtins).
+		// Preload sets window.electron_helper first, so this is browser-safe.
+		if (window.electron_helper) {
+			window.nmdv_node = { fsp: require('node:fs/promises'), path: require('node:path') };
+		}
+	</script>
 	<script src="js/app.js" type="module"></script>
 </head>
 <body>

@@ -1,0 +1,24 @@
+{
+	"name": "nmarkdownviewer",
+	"version": "0.1.0",
+	"description": "Markdown viewer/editor with integrated text-to-speech",
+	"main": "app/js/main.js",
+	"scripts": {
+		"start": "electron-forge start",
+		"start:fixture": "electron-forge start -- docs/_fixtures/long-document.md",
+		"serve": "node scripts/serve.js",
+		"package": "electron-forge package",
+		"make": "electron-forge make"
+	},
+	"author": "David Renelt",
+	"license": "MIT",
+	"dependencies": {
+		"electron-squirrel-startup": "^1.0.0"
+	},
+	"devDependencies": {
+		"@electron-forge/cli": "^7.11.1",
+		"@electron-forge/maker-squirrel": "^7.11.1",
+		"@electron-forge/maker-zip": "^7.11.1",
+		"electron": "^41.1.1"
+	}
+}

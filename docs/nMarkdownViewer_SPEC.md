@@ -162,9 +162,18 @@ YAML frontmatter never enters the editor: it is split off with
   now auto-selects the first real voice (chat-controller pattern) and refuses
   to send without one. Known server data issue: the `AllanF5` voice entry is
   listed but 404s on synthesis (stale cache on Badkid).
-- [ ] **M5 — Electron shell.** electron_blank-derived main process,
-  `electron_helper` submodule, file association (double-click `.md`), argv
-  handoff, native read/write, window state. Package with electron-forge.
+- [x] **M5 — Electron shell (core).** electron_blank-derived main process
+  ([app/js/main.js](../app/js/main.js)): thin bootstrap, `electron_helper`
+  preload, argv file handoff (double-click/CLI → root tree at `path.dirname`
+  + open file, unified semantics), frameless window, renderer-console piping
+  + dev boot beacon (`out/boot-beacon.json`) for headless smoke tests.
+  Renderer uses node builtins via a guarded classic-script bridge
+  (ESM renderers cannot `import 'node:*'`). Squirrel packaging stays (the
+  user's auto-update workflow via `update.js` depends on it); file
+  association via HKCU registry (minimal version live, full
+  windows-native-registry pattern deferred until that repo is public — see
+  Agents.md). **Not yet done:** icons are placeholders, auto-update wiring,
+  window state persistence, single-instance handling, packaged-app testing.
 - [ ] **M6 — Polish.** Recent files, theme toggle, remember window geometry,
   installer/release pipeline (electron_blank `scripts/` pattern).
 
