@@ -64,6 +64,15 @@ nui-file-tree#file-tree {
 	padding: var(--nui-space-double) 0;
 }
 
+/* nui-markdown's host is inline by default (no display rule in nui-theme.css —
+   component gap). Block it so the nui-page child contract engages: horizontal
+   padding via --nui-space-double, max-width via --space-page-maxwidth.
+   Center the reading column in the remaining space. */
+#viewer {
+	display: block;
+	margin-inline: auto;
+}
+
 #editor {
 	height: 100%;
 }
