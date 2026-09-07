@@ -51,6 +51,7 @@ nui-file-tree#file-tree {
 #sidebar-tools #btn-open button {
 	display: flex;
 	align-items: center;
+	justify-content: flex-start;
 	gap: var(--nui-space-quarter);
 	width: 100%;
 }
