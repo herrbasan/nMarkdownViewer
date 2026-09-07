@@ -54,7 +54,7 @@ async function boot() {
 		onClose: () => { window.electron_helper ? electron_helper.app.exit() : location.reload(); }
 	});
 	g.statusBar = g.win.element.querySelector('.nui-status-bar');
-	g.statusBar.innerHTML = '<span id="status-text"></span><span id="status-right"><span id="tts-progress"></span><button id="tts-stop" type="button"><nui-icon name="stop"></nui-icon> Stop</button></span>';
+	g.statusBar.innerHTML = '<span id="status-text"></span><span id="status-right"><span id="tts-progress"></span><button id="tts-stop" type="button"><nui-icon name="playlist_remove"></nui-icon> Stop</button></span>';
 	el['tts-stop'] = document.getElementById('tts-stop');
 	el['tts-progress'] = document.getElementById('tts-progress');
 	el['tts-stop'].addEventListener('click', () => g.tts.stop());
@@ -341,15 +341,15 @@ function ttsState(state, time) {
 		case 'loading':
 			stop.classList.add('active');
 			progress.textContent = 'Requesting audio…';
-			icon.setAttribute('name', 'stop_circle');
+			icon.setAttribute('name', 'close');
 			break;
 		case 'playing':
 			stop.classList.add('active');
-			icon.setAttribute('name', 'pause_circle');
+			icon.setAttribute('name', 'pause');
 			break;
 		case 'paused':
 			progress.textContent = 'Paused';
-			icon.setAttribute('name', 'play_circle');
+			icon.setAttribute('name', 'play');
 			break;
 		case 'time':
 			if (!g.tts.isActive()) break;
@@ -362,7 +362,7 @@ function ttsState(state, time) {
 		case 'idle':
 			stop.classList.remove('active');
 			progress.textContent = '';
-			icon.setAttribute('name', 'volume_up');
+			icon.setAttribute('name', 'volume');
 			break;
 	}
 }
