@@ -275,6 +275,7 @@ function setMode(mode) {
 	g.mode = mode;
 	document.getElementById('md-main').hidden = mode === 'edit';
 	el.editor.hidden = mode !== 'edit';
+	el['btn-edit'].classList.toggle('editing', mode === 'edit');
 	el['btn-edit'].querySelector('nui-icon').setAttribute('name', mode === 'edit' ? 'close' : 'edit');
 	el['btn-edit'].querySelector('button').setAttribute('aria-label', mode === 'edit' ? 'Close editor (apply edits)' : 'Edit');
 }

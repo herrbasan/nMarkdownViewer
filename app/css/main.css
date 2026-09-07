@@ -92,6 +92,12 @@ nui-file-tree#file-tree {
 	min-height: 0;
 }
 
+/* Edit button shows its active (editing) state — the X gets a subtle shade */
+#btn-edit.editing button {
+	background: var(--color-shade4);
+	border-radius: var(--border-radius1);
+}
+
 /* Content column: nui-main scrolls (NUI provides overflow-y:auto),
    the player docks in its own container below it. */
 nui-content {
