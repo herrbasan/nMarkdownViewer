@@ -51,7 +51,107 @@ nui-file-tree#file-tree {
 }
 
 #editor {
-	height: 100%;
+	flex: 1;
+	min-height: 0;
+}
+
+/* Content column: page scrolls, player docked at the bottom */
+nui-content main {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+nui-page#page {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+#tts-mount {
+	flex: none;
+}
+
+/* Docked TTS player (adapted from LLM-Gateway-Chat tts-player) */
+.tts-player {
+	box-sizing: border-box;
+	width: 100%;
+	border-top: var(--border-thickness) solid var(--border-shade2);
+	background: var(--color-shade1);
+	padding: var(--nui-space-half) var(--nui-space);
+}
+
+.tts-player[hidden] {
+	display: none !important;
+}
+
+.tts-player-panel {
+	display: flex;
+	flex-direction: column;
+	gap: var(--nui-space-quarter);
+	max-width: 60rem;
+	margin: 0 auto;
+}
+
+.tts-player-row {
+	display: flex;
+	align-items: center;
+	gap: var(--nui-space-half);
+	min-width: 0;
+}
+
+.tts-player-main {
+	gap: var(--nui-space-quarter);
+}
+
+.tts-player-btn {
+	flex-shrink: 0;
+}
+
+.tts-player-btn-download[hidden] {
+	display: none !important;
+}
+
+.tts-player-time {
+	flex: 1;
+	min-width: 0;
+	font-size: var(--font-size-xsmall);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-color-dim);
+	letter-spacing: 0.02em;
+	padding-inline: var(--nui-space-quarter);
+}
+
+.tts-player-time-sep {
+	margin-inline: 0.2em;
+	opacity: 0.6;
+}
+
+/* Buffered / still-generating audio — overlay lane behind the fill */
+nui-slider.tts-player-scrub .tts-player-scrub-buffer {
+	position: absolute;
+	left: 0;
+	top: 50%;
+	transform: translateY(-50%);
+	height: 0.35rem;
+	width: 0%;
+	border-radius: 99px;
+	background: color-mix(in srgb, var(--color-highlight) 35%, var(--color-shade3));
+	pointer-events: none;
+	z-index: 0;
+}
+
+.tts-player.is-paused nui-slider.tts-player-scrub .tts-player-scrub-buffer {
+	background: color-mix(in srgb, var(--color-highlight) 45%, var(--color-shade3));
+}
+
+.tts-player.is-loading .tts-player-icon-play {
+	animation: tts-spin 0.8s linear infinite;
+	color: var(--color-highlight);
+}
+
+@keyframes tts-spin {
+	to { transform: rotate(360deg); }
 }
 
 /* Config pane (right sidebar) */
@@ -79,39 +179,4 @@ nui-file-tree#file-tree {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-}
-
-#status-right {
-	margin-left: auto;
-	display: flex;
-	align-items: center;
-	gap: var(--nui-space-half);
-}
-
-#tts-progress {
-	font-size: var(--font-size-xsmall);
-	color: var(--text-color-dim);
-	font-variant-numeric: tabular-nums;
-}
-
-#tts-stop {
-	display: none;
-	align-items: center;
-	gap: var(--nui-space-quarter);
-	background: transparent;
-	border: var(--border-thickness) solid var(--border-shade3);
-	border-radius: var(--border-radius1);
-	color: var(--text-color);
-	font-size: var(--font-size-xsmall);
-	padding: 0 var(--nui-space-half);
-	height: calc(var(--nui-space) * 1.5);
-	cursor: pointer;
-}
-
-#tts-stop:hover {
-	background: var(--color-shade3);
-}
-
-#tts-stop.active {
-	display: flex;
 }

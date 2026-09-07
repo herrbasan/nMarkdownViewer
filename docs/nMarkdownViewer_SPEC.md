@@ -133,10 +133,13 @@ YAML frontmatter never enters the editor: it is split off with
   herrbasan/nui_wc2 (user decision).
 - [x] **M2 — App shell rebuild.** nui-app-window chrome (title + status bar)
   wrapping nui-app (header toolbar, nui-file-tree sidebar, content column).
-  Right-sidebar overlay **config pane** for TTS (engine/voice/speed/clean/
-  stitch, prefs in localStorage) following the LLM-Gateway-Chat pattern.
-  TTS retargeted to nSpeech v3 API with vendored `SpeechPlayer` (MSE
-  progressive playback, pause/resume independent of download).
+  Right-sidebar overlay **config pane** for TTS (engine incl. cloud providers,
+  voice/speed/clean/stitch, prefs in localStorage) following the
+  LLM-Gateway-Chat pattern. TTS retargeted to nSpeech v3 API with vendored
+  `SpeechPlayer` (MSE progressive playback). **Docked audio player** at the
+  bottom of the content area (chat's TtsPlayerHost): timeline scrubbing,
+  buffered-lane display while generating, download of the generated MP3
+  (named after the document).
 - [ ] **M2.5 — Round-trip fixtures.** Test corpus covering the full syntax
   subset, frontmatter handling verified, XSS caveat decision, built-in
   `editor.markdown` vs. our md-serializer bake-off.
@@ -187,3 +190,5 @@ YAML frontmatter never enters the editor: it is split off with
 | 2026-09-07 | Vendored `nspeech-client.js` (SpeechPlayer) over hand-rolled fetch | MSE progressive playback + pause/resume independent of download is solved, production-tested code from the user's own chat project — internalize, don't reinvent |
 | 2026-09-07 | Config pane lists local engines only (nspeech sentinel + resident gpu:false) | Cloud engines are paid API calls — excluded from a local document viewer unless explicitly requested. Engine switching stays in the nSpeech dashboard |
 | 2026-09-07 | nSpeech v3 server-side `clean` + auto-chunking replaces client-side text extraction/chunking | Server is authoritative (regex clean, transparent long-form stitching) — less client code, single source of cleaning rules |
+| 2026-09-07 | Docked TtsPlayerHost (vendored from chat) as THE audio transport | One player chrome for scrub + download; status bar stays text-only. Controller interface = SpeechPlayer subset, no adapter needed |
+| 2026-09-07 | Cloud engines listed in the pane (user decision) | Selecting a cloud engine + Listen is the user's explicit paid action — same model as the chat |

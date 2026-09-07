@@ -10,6 +10,7 @@ import '../modules/nui_wc2/NUI/lib/modules/nui-file-tree.js';
 import '../modules/nui_wc2/NUI/lib/modules/nui-rich-text.js';
 import { htmlToMarkdown } from './md-serializer.js';
 import { createTts } from './tts.js';
+import { TtsPlayerHost } from './lib/tts-player.js';
 
 const g = {
 	config: null,
@@ -54,10 +55,7 @@ async function boot() {
 		onClose: () => { window.electron_helper ? electron_helper.app.exit() : location.reload(); }
 	});
 	g.statusBar = g.win.element.querySelector('.nui-status-bar');
-	g.statusBar.innerHTML = '<span id="status-text"></span><span id="status-right"><span id="tts-progress"></span><button id="tts-stop" type="button"><nui-icon name="playlist_remove"></nui-icon> Stop</button></span>';
-	el['tts-stop'] = document.getElementById('tts-stop');
-	el['tts-progress'] = document.getElementById('tts-progress');
-	el['tts-stop'].addEventListener('click', () => g.tts.stop());
+	g.statusBar.innerHTML = '<span id="status-text"></span>';
 
 	// App-level sidebar toggling (data-action="toggle-sidebar[:right]") —
 	// a convention the app wires itself, not a NUI builtin (see nui-boilerplate).
@@ -100,6 +98,15 @@ async function boot() {
 		onState: ttsState
 	});
 	await g.tts.init();
+
+	// Player chrome docked at the bottom of the content area (scrub + download)
+	g.playerHost = new TtsPlayerHost({
+		controller: g.tts.player,
+		mount: document.getElementById('tts-mount'),
+		downloadName: () => (g.fileName ? g.fileName.replace(/\.(md|markdown)$/i, '') : 'audio') + '.mp3'
+	});
+	g.playerHost.attach();
+
 	status(g.tts.available ? 'Ready. Open a folder to begin.' : `nSpeech unreachable at ${g.config.nspeech.baseUrl} — TTS disabled`);
 
 	window.nmdv = g; // dev console access (single-user desktop app)
@@ -330,40 +337,14 @@ function listen() {
 	g.tts.speak(text);
 }
 
-// Player state → status bar transport + listen button icon
-function ttsState(state, time) {
-	const stop = el['tts-stop'];
-	const progress = el['tts-progress'];
+// Player state → listen button icon (transport itself lives in the docked player)
+function ttsState(state) {
 	const icon = el['btn-listen'].querySelector('nui-icon');
-	const fmt = (s) => `${(s / 60) | 0}:${String((s | 0) % 60).padStart(2, '0')}`;
-
 	switch (state) {
-		case 'loading':
-			stop.classList.add('active');
-			progress.textContent = 'Requesting audio…';
-			icon.setAttribute('name', 'close');
-			break;
-		case 'playing':
-			stop.classList.add('active');
-			icon.setAttribute('name', 'pause');
-			break;
-		case 'paused':
-			progress.textContent = 'Paused';
-			icon.setAttribute('name', 'play');
-			break;
-		case 'time':
-			if (!g.tts.isActive()) break;
-			if (!time.downloadComplete && !time.currentTime) {
-				progress.textContent = `Receiving… ${(time.bytesReceived / 1024) | 0} KB`;
-			} else {
-				progress.textContent = fmt(time.currentTime) + (time.duration ? ` / ${fmt(time.duration)}` : '');
-			}
-			break;
-		case 'idle':
-			stop.classList.remove('active');
-			progress.textContent = '';
-			icon.setAttribute('name', 'volume');
-			break;
+		case 'loading': icon.setAttribute('name', 'close'); break;
+		case 'playing': icon.setAttribute('name', 'pause'); break;
+		case 'paused': icon.setAttribute('name', 'play'); break;
+		case 'idle': icon.setAttribute('name', 'volume'); break;
 	}
 }
 
