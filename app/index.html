@@ -9,6 +9,7 @@
 	<link rel="stylesheet" href="modules/nui_wc2/NUI/css/modules/nui-app-window.css">
 	<link rel="stylesheet" href="modules/nui_wc2/NUI/css/modules/nui-file-tree.css">
 	<link rel="stylesheet" href="modules/nui_wc2/NUI/css/modules/nui-rich-text.css">
+	<link rel="stylesheet" href="modules/nui_wc2/NUI/css/modules/nui-syntax-highlight.css">
 	<link rel="stylesheet" href="css/main.css">
 	<script src="js/app.js" type="module"></script>
 </head>
@@ -29,7 +30,7 @@
 						<button type="button" aria-label="Listen" disabled><nui-icon name="volume"></nui-icon></button>
 					</nui-button>
 					<nui-button variant="icon" id="btn-edit">
-						<button type="button" aria-label="Edit" disabled><nui-icon name="edit"></nui-icon></button>
+						<button type="button" aria-label="Edit" disabled><nui-icon name="edit"></nui-icon><span id="btn-edit-label">Edit</span></button>
 					</nui-button>
 					<nui-button variant="icon" id="btn-save">
 						<button type="button" aria-label="Save" disabled><nui-icon name="save"></nui-icon></button>
@@ -115,8 +116,8 @@
 						<p class="lead">Open a folder in the sidebar to browse Markdown files, or drop a <code>.md</code> file anywhere.</p>
 					</div>
 				</nui-page>
-				<nui-rich-text id="editor" placeholder="Markdown content…" hidden></nui-rich-text>
 			</nui-main>
+			<nui-rich-text id="editor" placeholder="Markdown content…" hidden></nui-rich-text>
 			<div id="tts-mount"></div>
 		</nui-content>
 	</nui-app>

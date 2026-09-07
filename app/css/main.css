@@ -74,7 +74,29 @@ nui-file-tree#file-tree {
 }
 
 #editor {
-	height: 100%;
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+/* Editor fills the content column (own scroll, fixed toolbar) — geometry
+   plumbing so the component's internal flex chain gets definite heights. */
+#editor > * {
+	flex: 1;
+	min-height: 0;
+}
+
+#editor .nui-rich-text-editor {
+	flex: 1;
+	min-height: 0;
+}
+
+/* Edit toggle: icon + label button */
+#btn-edit button {
+	display: flex;
+	align-items: center;
+	gap: var(--nui-space-quarter);
 }
 
 /* Content column: nui-main scrolls (NUI provides overflow-y:auto),

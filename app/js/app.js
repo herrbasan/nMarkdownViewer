@@ -273,13 +273,11 @@ async function writeFile() {
 
 function setMode(mode) {
 	g.mode = mode;
-	const viewer = document.getElementById('viewer');
-	if (viewer) viewer.hidden = mode === 'edit';
-	const welcome = document.getElementById('welcome');
-	if (welcome) welcome.hidden = mode === 'edit';
+	document.getElementById('md-main').hidden = mode === 'edit';
 	el.editor.hidden = mode !== 'edit';
-	el['btn-edit'].querySelector('button').setAttribute('aria-label', mode === 'edit' ? 'Preview' : 'Edit');
 	el['btn-edit'].querySelector('nui-icon').setAttribute('name', mode === 'edit' ? 'visibility' : 'edit');
+	document.getElementById('btn-edit-label').textContent = mode === 'edit' ? 'Preview' : 'Edit';
+	el['btn-edit'].querySelector('button').setAttribute('aria-label', mode === 'edit' ? 'Preview (apply edits)' : 'Edit');
 }
 
 function renderView() {
