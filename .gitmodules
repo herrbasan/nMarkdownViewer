@@ -1,0 +1,6 @@
+[submodule "app/modules/nui_wc2"]
+	path = app/modules/nui_wc2
+	url = https://github.com/herrbasan/nui_wc2.git
+[submodule "app/modules/electron_helper"]
+	path = app/modules/electron_helper
+	url = https://github.com/herrbasan/electron_helper.git
