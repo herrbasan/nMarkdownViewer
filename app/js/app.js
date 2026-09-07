@@ -242,7 +242,6 @@ function loadDocument(handle, name, text) {
 	if (app.classList.contains('sidebar-open')) app.toggleSidebar('left');
 	setTitle(name);
 	setBtn('btn-edit', false);
-	setBtn('btn-save', false);
 	setBtn('btn-listen', !g.tts?.available);
 	status(`Opened ${name} (${text.length} chars)`);
 }
@@ -275,6 +274,8 @@ function setMode(mode) {
 	g.mode = mode;
 	document.getElementById('md-main').hidden = mode === 'edit';
 	el.editor.hidden = mode !== 'edit';
+	// Save only exists in edit mode — there's nothing to save otherwise
+	el['btn-save'].hidden = mode !== 'edit';
 	el['btn-edit'].classList.toggle('editing', mode === 'edit');
 	el['btn-edit'].querySelector('nui-icon').setAttribute('name', mode === 'edit' ? 'close' : 'edit');
 	el['btn-edit'].querySelector('button').setAttribute('aria-label', mode === 'edit' ? 'Close editor (apply edits)' : 'Edit');
