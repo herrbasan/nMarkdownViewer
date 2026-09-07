@@ -6,10 +6,9 @@
 // (MSE progressive playback, pause/resume independent of download).
 //
 // Scope decisions vs. the chat controller:
-// - Local engines only: the 'nspeech' sentinel (dashboard-selected) plus
-//   resident gpu:false engines callable without switching. Cloud engines
-//   are EXCLUDED — they are paid API calls and have no place in a local
-//   document viewer unless the user explicitly asks for them.
+// - Local + cloud engines are listed (user explicitly asked for cloud,
+//   same as the chat). Selecting a cloud engine and pressing Listen is
+//   the user's explicit paid action.
 // - Engine switching (POST /v1/admin/engine) is not offered — that's
 //   dashboard territory.
 // - Prefs live in localStorage (nmdv-tts-*).
@@ -109,7 +108,9 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 			// Resident local engines (gpu:false, venv present, not current) —
 			// callable WITHOUT switching, like cloud providers but free + local.
 			const residents = t.engines.filter(e => !e.type && !e.gpu && e.venv_exists && e.name !== t.currentEngine);
-			const results = await Promise.all(residents.map(async (eng) => {
+			// Cloud engines — fetched the same way (chat-controller pattern).
+			const remoteEngines = [...residents, ...t.engines.filter(e => e.type === 'cloud')];
+			const results = await Promise.all(remoteEngines.map(async (eng) => {
 				try {
 					const r = await fetch(`${baseUrl}/v1/voices?engine=${encodeURIComponent(eng.name)}`, { signal: abort.signal });
 					return { name: eng.name, voices: r.ok ? (await r.json()).voices || [] : [] };
@@ -142,6 +143,13 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 			.filter(e => !e.type && !e.gpu && e.venv_exists && e.name !== t.currentEngine)
 			.sort((a, b) => a.name.localeCompare(b.name));
 		for (const eng of residents) {
+			options.push({ value: eng.name, label: eng.name.charAt(0).toUpperCase() + eng.name.slice(1) });
+		}
+
+		const clouds = t.engines
+			.filter(e => e.type === 'cloud')
+			.sort((a, b) => a.name.localeCompare(b.name));
+		for (const eng of clouds) {
 			options.push({ value: eng.name, label: eng.name.charAt(0).toUpperCase() + eng.name.slice(1) });
 		}
 
