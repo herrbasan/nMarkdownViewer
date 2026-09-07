@@ -236,6 +236,7 @@ function loadDocument(handle, name, text) {
 	g.dirty = false;
 	setMode('view');
 	renderView();
+	document.getElementById('md-main').scrollTop = 0; // new document starts at the top
 	setTitle(name);
 	setBtn('btn-edit', false);
 	setBtn('btn-save', false);
