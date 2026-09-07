@@ -8,6 +8,7 @@ import '../modules/nui_wc2/NUI/nui.js';
 import { appWindow } from '../modules/nui_wc2/NUI/lib/modules/nui-app-window.js';
 import '../modules/nui_wc2/NUI/lib/modules/nui-file-tree.js';
 import '../modules/nui_wc2/NUI/lib/modules/nui-rich-text.js';
+import { contextMenu } from '../modules/nui_wc2/NUI/lib/modules/nui-context-menu.js';
 import { htmlToMarkdown } from './md-serializer.js';
 import { createTts } from './tts.js';
 import { TtsPlayerHost } from './lib/tts-player.js';
@@ -28,7 +29,7 @@ const g = {
 };
 
 const el = {};
-for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-collapse', 'btn-refresh', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status']) {
+for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open', 'btn-collapse', 'btn-refresh', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status']) {
 	el[id] = document.getElementById(id);
 }
 
@@ -64,8 +65,7 @@ async function boot() {
 		return true;
 	});
 
-	el['btn-open-folder'].addEventListener('click', openFolder);
-	el['btn-open-file'].addEventListener('click', openFile);
+	el['btn-open'].addEventListener('click', openUnified);
 	el['btn-refresh'].addEventListener('click', () => el['file-tree'].refresh());
 	el['btn-collapse'].addEventListener('click', () => el['file-tree'].collapseAll());
 	el['tree-search'].addEventListener('nui-input', (e) => {
@@ -146,6 +146,25 @@ function fsAccessAdapter(rootHandle) {
 	};
 }
 
+// Unified open: one entry point. File → open it (and select it in the tree
+// when it's inside the current root). Folder → root the tree there and open
+// its first Markdown file. Same semantics for button, drop, and (M5) the OS.
+function openUnified(e) {
+	const menu = contextMenu([
+		{ label: 'File…', action: 'file', icon: 'description' },
+		{ label: 'Folder…', action: 'folder', icon: 'folder_open' }
+	], {
+		onAction: (action) => {
+			if (action === 'file') openFile();
+			if (action === 'folder') openFolder();
+		}
+	});
+	// Defer a tick: the module's click-outside listener attaches during show
+	// and would otherwise fire for THIS click, closing the menu instantly
+	// (nui_wc2#27).
+	setTimeout(() => menu.showAt(el['btn-open']), 0);
+}
+
 async function openFolder() {
 	if (!window.showDirectoryPicker) {
 		throw new Error('File System Access API unavailable — use Chrome/Edge or the Electron shell');
@@ -157,6 +176,12 @@ async function openFolder() {
 		if (err.name === 'AbortError') return; // user cancelled — normal variance
 		throw err;
 	}
+	if (!await confirmDiscard()) return;
+	await rootTree(handle);
+	await openFirstMarkdown();
+}
+
+async function rootTree(handle) {
 	g.dirHandle = handle;
 	g.fs = fsAccessAdapter(handle);
 	const tree = el['file-tree'];
@@ -167,21 +192,39 @@ async function openFolder() {
 	status(`Folder: ${handle.name}`);
 }
 
+// Open the alphabetically first Markdown file in the tree root.
+async function openFirstMarkdown() {
+	const entries = await g.fs.readdir('');
+	const first = entries
+		.filter(e => e.kind === 'file' && /\.(md|markdown)$/i.test(e.name))
+		.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))[0];
+	if (!first) {
+		status('No Markdown files in this folder.');
+		return;
+	}
+	await openTreePath(first.path);
+}
+
 async function onTreeFile(entry) {
 	if (entry.kind === 'dir') return;
 	if (!/\.(md|markdown)$/i.test(entry.name)) {
 		status(`${entry.name} is not a Markdown file.`);
 		return;
 	}
-	if (entry.path === g.fileHandle?._nmdvPath) return;
+	await openTreePath(entry.path);
+}
+
+async function openTreePath(path) {
+	if (path === g.fileHandle?._nmdvPath) return;
 	if (!await confirmDiscard()) {
 		if (g.fileHandle?._nmdvPath) el['file-tree'].select(g.fileHandle._nmdvPath);
 		return;
 	}
-	const handle = await g.fs.readFileHandle(entry.path);
-	handle._nmdvPath = entry.path;
+	const handle = await g.fs.readFileHandle(path);
+	handle._nmdvPath = path;
 	const file = await handle.getFile();
 	loadDocument(handle, file.name, await file.text());
+	el['file-tree'].select(path);
 }
 
 async function openFile() {
@@ -200,20 +243,41 @@ async function openFile() {
 	}
 	const file = await handle.getFile();
 	loadDocument(handle, file.name, await file.text());
+	selectInTree(file.name);
+}
+
+// A picked/dropped file gives us no parent folder in the browser (File
+// System Access limitation — Electron resolves this via path.dirname).
+// Best we can do: if a file with that exact name is loaded in the current
+// tree, select it there.
+function selectInTree(name) {
+	const tree = el['file-tree'];
+	const matches = [...tree._nodes.values()].filter(n => n.entry.kind === 'file' && n.entry.name === name);
+	if (matches.length === 1) tree.select(matches[0].entry.path);
 }
 
 async function onDrop(e) {
 	e.preventDefault();
 	const item = [...(e.dataTransfer?.items || [])].find(i => i.kind === 'file');
 	if (!item) return;
+	const handle = item.getAsFileSystemHandle ? await item.getAsFileSystemHandle() : null;
+
+	// Dropped a folder → same as Open Folder: root the tree, read its first file
+	if (handle?.kind === 'directory') {
+		if (!await confirmDiscard()) return;
+		await rootTree(handle);
+		await openFirstMarkdown();
+		return;
+	}
+
 	const file = item.getAsFile();
 	if (!file || !/\.(md|markdown)$/i.test(file.name)) {
 		status('Drop ignored: not a Markdown file.');
 		return;
 	}
 	if (!await confirmDiscard()) return;
-	const handle = item.getAsFileSystemHandle ? await item.getAsFileSystemHandle() : null;
 	loadDocument(handle, file.name, await file.text());
+	selectInTree(file.name);
 }
 
 // Returns true when it is safe to replace the current document.

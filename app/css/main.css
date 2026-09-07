@@ -44,11 +44,11 @@ nui-file-tree#file-tree {
 	border-bottom: var(--border-thickness) solid var(--border-shade2);
 }
 
-#sidebar-tools #btn-open-folder {
+#sidebar-tools #btn-open {
 	flex: 1;
 }
 
-#sidebar-tools #btn-open-folder button {
+#sidebar-tools #btn-open button {
 	display: flex;
 	align-items: center;
 	gap: var(--nui-space-quarter);

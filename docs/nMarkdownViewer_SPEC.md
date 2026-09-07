@@ -105,13 +105,21 @@ YAML frontmatter never enters the editor: it is split off with
 
 ### File access
 
-- **Browser phase:** File System Access API (`showOpenFilePicker`,
-  `createWritable`, drag & drop via `getAsFileSystemHandle`). Chromium-only —
-  acceptable, Electron is Chromium too. API missing → fail loud.
-- **Electron phase (M5):** main process receives the file path (file
-  association / argv), passes it to the stage via `electron_helper.global.env`;
-  stage reads/writes through `electron_helper.tools`. The File System Access
-  path stays as fallback.
+**Unified Open semantics** (same across button, drop, and the M5 OS shell):
+
+- **File** → open it; select it in the tree when it's inside the current root.
+- **Folder** → root the tree there, then open its first Markdown file
+  (alphabetical).
+
+- **Browser phase:** File System Access API. One **Open** button with a
+  File…/Folder… choice menu (the two pickers are separate APIs; Electron
+  collapses them into one dialog). A picked/dropped file does **not** expose
+  its parent folder (platform security design) — rooting the tree at the
+  file's folder only works in Electron via `path.dirname`. Folder drops work
+  via `getAsFileSystemHandle()`.
+- **Electron phase (M5):** one `showOpenDialog` with `openFile` +
+  `openDirectory`; file path → root tree at `path.dirname(file)` + open it.
+  The File System Access path stays as fallback.
 
 ## Security Notes
 
