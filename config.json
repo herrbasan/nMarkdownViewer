@@ -1,0 +1,8 @@
+{
+	"nspeech": {
+		"baseUrl": "http://192.168.0.100:2233",
+		"voice": "",
+		"outputFormat": "mp3",
+		"maxChunkChars": 800
+	}
+}

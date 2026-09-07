@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>nMarkdownViewer</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="modules/nui_wc2/NUI/css/nui-theme.css">
+	<link rel="stylesheet" href="modules/nui_wc2/NUI/css/modules/nui-rich-text.css">
+	<link rel="stylesheet" href="css/main.css">
+	<script src="js/app.js" type="module"></script>
+</head>
+<body>
+	<header id="app-header">
+		<span id="app-title">nMarkdownViewer</span>
+		<nui-button><button type="button" id="btn-open">Open…</button></nui-button>
+		<nui-button><button type="button" id="btn-edit" disabled>Edit</button></nui-button>
+		<nui-button><button type="button" id="btn-save" disabled>Save</button></nui-button>
+		<span class="header-sep"></span>
+		<nui-select id="voice-select"><select aria-label="TTS voice"></select></nui-select>
+		<nui-button><button type="button" id="btn-listen" disabled>Listen</button></nui-button>
+		<nui-button><button type="button" id="btn-stop" disabled>Stop</button></nui-button>
+		<span id="file-label"></span>
+	</header>
+	<main id="content">
+		<nui-markdown id="viewer" frontmatter="show"></nui-markdown>
+		<nui-rich-text id="editor" placeholder="Markdown content…" hidden></nui-rich-text>
+	</main>
+	<footer id="status-bar"><span id="status">Ready.</span></footer>
+</body>
+</html>
