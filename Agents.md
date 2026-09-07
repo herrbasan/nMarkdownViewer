@@ -50,11 +50,14 @@ with TTS disabled and says so in the status bar.
 
 ```
 app/
-  index.html            shell (toolbar, viewer, editor, status bar)
+  index.html            shell (nui-app: toolbar, file-tree sidebar, content, config pane)
   css/main.css          layout only — never nui-* component styling
   js/app.js             stage: all application logic
+  js/tts.js             TTS config pane + playback controller
+  js/lib/nspeech-client.js   vendored nSpeech SDK (SpeechPlayer) — from LLM-Gateway-Chat lib/tts
   js/md-serializer.js   HTML → Markdown (ours, highest-risk module)
-  modules/nui_wc2/      NUI submodule (read-only)
+  modules/nui_wc2/      NUI submodule (read-only; upstream work on branches)
+  modules/electron_helper/   Electron IPC helper submodule (M5)
 config.json             nSpeech endpoint, voice, chunk size
 docs/nMarkdownViewer_SPEC.md   spec + dev plan (authoritative)
 scripts/serve.js        zero-dep static dev server

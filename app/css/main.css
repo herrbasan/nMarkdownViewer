@@ -1,67 +1,112 @@
-/* Layout only. Never style nui-* components — use their attributes. */
+/* App-specific layout only. Never style nui-* components. */
 
 html, body {
 	height: 100%;
 	margin: 0;
+	overflow: hidden;
 }
 
-body {
-	display: flex;
-	flex-direction: column;
-	font-family: var(--nui-font-family, system-ui, sans-serif);
-	background: var(--color-base);
-	color: var(--text-color);
-}
-
-#app-header {
-	display: flex;
-	align-items: center;
-	gap: var(--nui-space-half);
-	padding: var(--nui-space-half) var(--nui-space);
-	border-bottom: 1px solid var(--border-shade2);
-	flex-wrap: wrap;
-}
-
-#app-title {
+#doc-title {
 	font-weight: 600;
-	margin-right: var(--nui-space);
-}
-
-.header-sep {
-	width: 1px;
-	height: 1.5em;
-	background: var(--border-shade2);
-	margin: 0 var(--nui-space-half);
-}
-
-#file-label {
-	margin-left: auto;
-	opacity: 0.7;
-	font-size: 0.85em;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-#content {
+#doc-title.dirty::after {
+	content: ' •';
+}
+
+#sidebar-tools {
+	display: flex;
+	align-items: center;
+	gap: var(--nui-space-quarter);
+	padding: var(--nui-space-half);
+	border-bottom: var(--border-thickness) solid var(--border-shade2);
+}
+
+#sidebar-tools #btn-open-folder {
 	flex: 1;
+}
+
+#sidebar-tools #btn-open-folder button {
+	display: flex;
+	align-items: center;
+	gap: var(--nui-space-quarter);
+	width: 100%;
+}
+
+nui-file-tree#file-tree {
+	height: calc(100% - 3rem);
 	overflow-y: auto;
-	padding: var(--nui-space-double) var(--nui-space);
 }
 
-#content nui-markdown,
-#content nui-rich-text {
-	max-width: 60rem;
-	margin: 0 auto;
+#welcome {
+	padding: var(--nui-space-double) 0;
 }
 
-#status-bar {
-	padding: var(--nui-space-half) var(--nui-space);
-	border-top: 1px solid var(--border-shade2);
-	font-size: 0.8em;
-	opacity: 0.8;
+#editor {
+	height: 100%;
 }
 
-[hidden] {
-	display: none !important;
+/* Config pane (right sidebar) */
+.config-pane {
+	display: flex;
+	flex-direction: column;
+	gap: var(--nui-space);
+	padding: var(--nui-space);
+	height: 100%;
+	overflow-y: auto;
+}
+
+.config-title {
+	font-weight: 600;
+	font-size: var(--font-size-medium);
+}
+
+.config-status {
+	font-size: var(--font-size-xsmall);
+	color: var(--text-color-dim);
+}
+
+/* Status bar content (chrome provides the bar itself) */
+#status-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+#status-right {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: var(--nui-space-half);
+}
+
+#tts-progress {
+	font-size: var(--font-size-xsmall);
+	color: var(--text-color-dim);
+	font-variant-numeric: tabular-nums;
+}
+
+#tts-stop {
+	display: none;
+	align-items: center;
+	gap: var(--nui-space-quarter);
+	background: transparent;
+	border: var(--border-thickness) solid var(--border-shade3);
+	border-radius: var(--border-radius1);
+	color: var(--text-color);
+	font-size: var(--font-size-xsmall);
+	padding: 0 var(--nui-space-half);
+	height: calc(var(--nui-space) * 1.5);
+	cursor: pointer;
+}
+
+#tts-stop:hover {
+	background: var(--color-shade3);
+}
+
+#tts-stop.active {
+	display: flex;
 }

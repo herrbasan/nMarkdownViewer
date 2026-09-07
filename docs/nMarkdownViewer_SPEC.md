@@ -131,15 +131,22 @@ YAML frontmatter never enters the editor: it is split off with
   `feature/file-tree` in nui_wc2): provider-based lazy tree, ARIA treeview,
   filter/sort, Playground demo, verified in browser. Pending: push to
   herrbasan/nui_wc2 (user decision).
-- [ ] **M2 — App shell rebuild.** nui-app-window chrome (title + status bar)
+- [x] **M2 — App shell rebuild.** nui-app-window chrome (title + status bar)
   wrapping nui-app (header toolbar, nui-file-tree sidebar, content column).
-  Round-trip test corpus (fixtures covering the full syntax subset),
-  frontmatter handling verified, XSS caveat decision.
+  Right-sidebar overlay **config pane** for TTS (engine/voice/speed/clean/
+  stitch, prefs in localStorage) following the LLM-Gateway-Chat pattern.
+  TTS retargeted to nSpeech v3 API with vendored `SpeechPlayer` (MSE
+  progressive playback, pause/resume independent of download).
+- [ ] **M2.5 — Round-trip fixtures.** Test corpus covering the full syntax
+  subset, frontmatter handling verified, XSS caveat decision, built-in
+  `editor.markdown` vs. our md-serializer bake-off.
 - [ ] **M3 — Editor.** md-serializer correctness against the fixture corpus,
   dirty-state UX, save-as, keyboard shortcuts (Ctrl+S, Ctrl+E).
-- [ ] **M4 — TTS.** Playback polish: pause/resume, chunk progress in status bar,
-  prefetch next chunk, voice persisted to config, graceful engine-switch
-  messaging (voice lists differ per engine).
+- [ ] **M4 — TTS polish.** Chunk progress details in status bar (SpeechPlayer
+  already streams + pauses), listen-from-position, engine-switch messaging.
+  Note: 2026-09-07 nSpeech local workers (f5tts AND kokoro) returned
+  `worker_error` 500s despite "ready" state — server-side issue on Badkid,
+  verified client-side correct. Recheck when the server is fixed.
 - [ ] **M5 — Electron shell.** electron_blank-derived main process,
   `electron_helper` submodule, file association (double-click `.md`), argv
   handoff, native read/write, window state. Package with electron-forge.
@@ -174,3 +181,7 @@ YAML frontmatter never enters the editor: it is split off with
 | 2026-09-07 | `nui-file-tree` defaults to showing everything | Generic component first; `.md`-only is a host-side filter call |
 | 2026-09-07 | nui-app-window chrome in BOTH phases | Same title bar + status bar in browser and Electron; status bar owns status text + TTS transport — no `nui-app-footer` |
 | 2026-09-07 | nui-app shell inside the chrome content | Header = toolbar, left sidebar = file tree, content = reading column — the nui-boilerplate layout, no custom layout CSS |
+| 2026-09-07 | TTS config in right-sidebar overlay pane | Reader chrome stays clean; pane opens on demand (gear). Pattern taken from LLM-Gateway-Chat's Configuration sidebar |
+| 2026-09-07 | Vendored `nspeech-client.js` (SpeechPlayer) over hand-rolled fetch | MSE progressive playback + pause/resume independent of download is solved, production-tested code from the user's own chat project — internalize, don't reinvent |
+| 2026-09-07 | Config pane lists local engines only (nspeech sentinel + resident gpu:false) | Cloud engines are paid API calls — excluded from a local document viewer unless explicitly requested. Engine switching stays in the nSpeech dashboard |
+| 2026-09-07 | nSpeech v3 server-side `clean` + auto-chunking replaces client-side text extraction/chunking | Server is authoritative (regex clean, transparent long-form stitching) — less client code, single source of cleaning rules |

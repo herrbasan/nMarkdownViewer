@@ -5,23 +5,29 @@
 // provides window.electron_helper and OS integration; all app logic lives here.
 
 import '../modules/nui_wc2/NUI/nui.js';
+import { appWindow } from '../modules/nui_wc2/NUI/lib/modules/nui-app-window.js';
+import '../modules/nui_wc2/NUI/lib/modules/nui-file-tree.js';
 import '../modules/nui_wc2/NUI/lib/modules/nui-rich-text.js';
 import { htmlToMarkdown } from './md-serializer.js';
+import { createTts } from './tts.js';
 
 const g = {
 	config: null,
-	fileHandle: null,
+	win: null,            // appWindow chrome
+	statusBar: null,
+	dirHandle: null,      // FileSystemDirectoryHandle backing the tree
+	fs: null,             // { readdir, readFileHandle } adapter for the tree root
+	fileHandle: null,     // FileSystemFileHandle of the open document
 	fileName: '',
 	markdown: '',
 	frontmatterRaw: null, // fenced YAML block preserved across edit round-trips
 	dirty: false,
-	mode: 'view', // 'view' | 'edit'
-	nspeechOk: false,
-	tts: { chunks: [], index: 0, playing: false, audio: null }
+	mode: 'view',         // 'view' | 'edit'
+	tts: null             // config-pane controller (js/tts.js), set in boot
 };
 
 const el = {};
-for (const id of ['btn-open', 'btn-edit', 'btn-save', 'btn-listen', 'btn-stop', 'voice-select', 'editor', 'file-label', 'status', 'content']) {
+for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-refresh', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status']) {
 	el[id] = document.getElementById(id);
 }
 
@@ -39,42 +45,143 @@ async function boot() {
 	if (!res.ok) throw new Error(`config.json unreachable (${res.status}) — run via scripts/serve.js`);
 	g.config = await res.json();
 
-	el['btn-open'].addEventListener('click', openFile);
+	// Window chrome (title bar + status bar) — same in browser and Electron
+	g.win = appWindow({
+		title: 'nMarkdownViewer',
+		icon: 'article',
+		inner: document.getElementById('shell'),
+		statusbar: true,
+		onClose: () => { window.electron_helper ? electron_helper.app.exit() : location.reload(); }
+	});
+	g.statusBar = g.win.element.querySelector('.nui-status-bar');
+	g.statusBar.innerHTML = '<span id="status-text"></span><span id="status-right"><span id="tts-progress"></span><button id="tts-stop" type="button"><nui-icon name="stop"></nui-icon> Stop</button></span>';
+	el['tts-stop'] = document.getElementById('tts-stop');
+	el['tts-progress'] = document.getElementById('tts-progress');
+	el['tts-stop'].addEventListener('click', () => g.tts.stop());
+
+	// App-level sidebar toggling (data-action="toggle-sidebar[:right]") —
+	// a convention the app wires itself, not a NUI builtin (see nui-boilerplate).
+	nui.registerAction('toggle-sidebar', (target, el, e, param) => {
+		document.querySelector('nui-app')?.toggleSidebar?.(param || 'left');
+		return true;
+	});
+
+	el['btn-open-folder'].addEventListener('click', openFolder);
+	el['btn-open-file'].addEventListener('click', openFile);
+	el['btn-refresh'].addEventListener('click', () => el['file-tree'].refresh());
 	el['btn-edit'].addEventListener('click', toggleEdit);
 	el['btn-save'].addEventListener('click', writeFile);
 	el['btn-listen'].addEventListener('click', listen);
-	el['btn-stop'].addEventListener('click', stopTts);
+
+	el['file-tree'].addEventListener('nui-file-select', (e) => onTreeFile(e.detail.entry));
+	el['file-tree'].addEventListener('nui-tree-error', (e) => status(`Cannot read ${e.detail.entry.path}: ${e.detail.error}`));
 
 	// Drag & drop (body-level: required for Electron file access later)
 	document.body.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
 	document.body.addEventListener('drop', onDrop);
 
 	window.addEventListener('beforeunload', (e) => { if (g.dirty) e.preventDefault(); });
-
-	g.tts.audio = new Audio();
-	g.tts.audio.addEventListener('ended', nextChunk);
-	g.tts.audio.addEventListener('error', () => {
-		status(`TTS playback error on chunk ${g.tts.index + 1}`);
-		stopTts();
+	window.addEventListener('keydown', (e) => {
+		if (e.ctrlKey && e.key === 's') { e.preventDefault(); writeFile(); }
+		if (e.ctrlKey && e.key === 'e') { e.preventDefault(); if (g.markdown) toggleEdit(); }
 	});
 
-	await checkNspeech();
-	status('Ready.');
+	// TTS config pane + playback
+	g.tts = createTts({
+		baseUrl: g.config.nspeech.baseUrl,
+		elements: { engine: el['cfg-engine'], voice: el['cfg-voice'], speed: el['cfg-speed'], clean: el['cfg-clean'], stitch: el['cfg-stitch'], status: el['cfg-status'] },
+		onStatus: status,
+		onState: ttsState
+	});
+	await g.tts.init();
+	status(g.tts.available ? 'Ready. Open a folder to begin.' : `nSpeech unreachable at ${g.config.nspeech.baseUrl} — TTS disabled`);
+
+	window.nmdv = g; // dev console access (single-user desktop app)
 }
 
-// ################################# FILES
+// Sets disabled on BOTH the nui-button wrapper and its inner native button
+// (the attribute on the wrapper alone does not gate clicks).
+function setBtn(id, disabled) {
+	el[id].toggleAttribute('disabled', disabled);
+	el[id].querySelector('button').disabled = disabled;
+}
+
+// ################################# FILE SYSTEM (browser: File System Access API)
+
+function fsAccessAdapter(rootHandle) {
+	const walk = async (path, wantFile) => {
+		const segs = path.split('/').filter(Boolean);
+		let dir = rootHandle;
+		const dirSegs = wantFile ? segs.slice(0, -1) : segs;
+		for (const s of dirSegs) dir = await dir.getDirectoryHandle(s);
+		return wantFile ? dir.getFileHandle(segs[segs.length - 1]) : dir;
+	};
+	return {
+		async readdir(path) {
+			const dir = await walk(path, false);
+			const entries = [];
+			for await (const child of dir.values()) {
+				entries.push({
+					name: child.name,
+					path: path ? `${path}/${child.name}` : child.name,
+					kind: child.kind === 'directory' ? 'dir' : 'file'
+				});
+			}
+			return entries;
+		},
+		readFileHandle: (path) => walk(path, true)
+	};
+}
+
+async function openFolder() {
+	if (!window.showDirectoryPicker) {
+		throw new Error('File System Access API unavailable — use Chrome/Edge or the Electron shell');
+	}
+	let handle;
+	try {
+		handle = await window.showDirectoryPicker();
+	} catch (err) {
+		if (err.name === 'AbortError') return; // user cancelled — normal variance
+		throw err;
+	}
+	g.dirHandle = handle;
+	g.fs = fsAccessAdapter(handle);
+	const tree = el['file-tree'];
+	tree.setProvider(g.fs.readdir);
+	await tree.setRoot({ name: handle.name, path: '' });
+	setBtn('btn-refresh', false);
+	status(`Folder: ${handle.name}`);
+}
+
+async function onTreeFile(entry) {
+	if (entry.kind === 'dir') return;
+	if (!/\.(md|markdown)$/i.test(entry.name)) {
+		status(`${entry.name} is not a Markdown file.`);
+		return;
+	}
+	if (entry.path === g.fileHandle?._nmdvPath) return;
+	if (!await confirmDiscard()) {
+		if (g.fileHandle?._nmdvPath) el['file-tree'].select(g.fileHandle._nmdvPath);
+		return;
+	}
+	const handle = await g.fs.readFileHandle(entry.path);
+	handle._nmdvPath = entry.path;
+	const file = await handle.getFile();
+	loadDocument(handle, file.name, await file.text());
+}
 
 async function openFile() {
 	if (!window.showOpenFilePicker) {
 		throw new Error('File System Access API unavailable — use Chrome/Edge or the Electron shell');
 	}
+	if (!await confirmDiscard()) return;
 	let handle;
 	try {
 		[handle] = await window.showOpenFilePicker({
 			types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown'] } }]
 		});
 	} catch (err) {
-		if (err.name === 'AbortError') return; // user cancelled — normal variance
+		if (err.name === 'AbortError') return;
 		throw err;
 	}
 	const file = await handle.getFile();
@@ -90,26 +197,40 @@ async function onDrop(e) {
 		status('Drop ignored: not a Markdown file.');
 		return;
 	}
+	if (!await confirmDiscard()) return;
 	const handle = item.getAsFileSystemHandle ? await item.getAsFileSystemHandle() : null;
 	loadDocument(handle, file.name, await file.text());
 }
 
+// Returns true when it is safe to replace the current document.
+async function confirmDiscard() {
+	if (!g.dirty) return true;
+	if (g.mode === 'edit') applyEdit(); // serialize pending edits before deciding
+	return await nui.components.dialog.confirm(
+		'Unsaved changes',
+		`"${g.fileName}" has unsaved changes. Discard them?`
+	);
+}
+
+// ################################# DOCUMENT
+
 function loadDocument(handle, name, text) {
-	stopTts();
+	g.tts?.stop();
 	g.fileHandle = handle;
 	g.fileName = name;
 	g.markdown = text;
 	g.dirty = false;
 	setMode('view');
 	renderView();
-	el['file-label'].textContent = name;
-	el['btn-edit'].disabled = false;
-	el['btn-save'].disabled = false;
-	el['btn-listen'].disabled = !g.nspeechOk;
+	setTitle(name);
+	setBtn('btn-edit', false);
+	setBtn('btn-save', false);
+	setBtn('btn-listen', !g.tts?.available);
 	status(`Opened ${name} (${text.length} chars)`);
 }
 
 async function writeFile() {
+	if (!g.markdown && !g.fileHandle) return;
 	if (g.mode === 'edit') applyEdit();
 	if (!g.fileHandle) {
 		try {
@@ -126,6 +247,7 @@ async function writeFile() {
 	await w.write(g.markdown);
 	await w.close();
 	g.dirty = false;
+	setTitle(g.fileName);
 	status(`Saved ${g.fileHandle.name}`);
 }
 
@@ -135,14 +257,19 @@ function setMode(mode) {
 	g.mode = mode;
 	const viewer = document.getElementById('viewer');
 	if (viewer) viewer.hidden = mode === 'edit';
+	const welcome = document.getElementById('welcome');
+	if (welcome) welcome.hidden = mode === 'edit';
 	el.editor.hidden = mode !== 'edit';
-	el['btn-edit'].querySelector('button').textContent = mode === 'edit' ? 'Preview' : 'Edit';
+	el['btn-edit'].querySelector('button').setAttribute('aria-label', mode === 'edit' ? 'Preview' : 'Edit');
+	el['btn-edit'].querySelector('nui-icon').setAttribute('name', mode === 'edit' ? 'visibility' : 'edit');
 }
 
 function renderView() {
 	// nui-markdown renders once on connect (_processed guard) — swap in a
 	// fresh element instead of mutating the connected one.
-	const old = document.getElementById('viewer');
+	document.getElementById('viewer')?.remove();
+	const welcome = document.getElementById('welcome');
+	if (welcome) welcome.remove();
 	const viewer = document.createElement('nui-markdown');
 	viewer.id = 'viewer';
 	viewer.setAttribute('frontmatter', 'show');
@@ -150,8 +277,7 @@ function renderView() {
 	s.type = 'text/markdown';
 	s.textContent = g.markdown;
 	viewer.appendChild(s);
-	if (old) old.replaceWith(viewer);
-	else el.content.appendChild(viewer);
+	el.page.appendChild(viewer);
 }
 
 function toggleEdit() {
@@ -171,135 +297,68 @@ function applyEdit() {
 	const body = htmlToMarkdown(el.editor.value);
 	g.markdown = g.frontmatterRaw ? g.frontmatterRaw + '\n\n' + body : body;
 	g.frontmatterRaw = null;
-	g.dirty = true;
+	if (!g.dirty) {
+		g.dirty = true;
+		setTitle(g.fileName);
+	}
 	setMode('view');
 	renderView();
 	status('Edits applied (unsaved)');
 }
 
-// ################################# TTS (nSpeech)
-
-async function checkNspeech() {
-	const base = g.config.nspeech.baseUrl;
-	try {
-		const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(3000) });
-		if (!res.ok) throw new Error(`HTTP ${res.status}`);
-		g.nspeechOk = true;
-		await loadVoices();
-	} catch (err) {
-		g.nspeechOk = false;
-		el['btn-listen'].disabled = true;
-		status(`nSpeech unreachable at ${base} — TTS disabled (${err.message})`);
-	}
+function setTitle(name) {
+	const label = name + (g.dirty ? '' : '');
+	el['doc-title'].textContent = label;
+	el['doc-title'].classList.toggle('dirty', g.dirty);
+	g.win.element.querySelector('.nui-app-titlebar .label').textContent = (g.dirty ? '• ' : '') + (name || 'nMarkdownViewer');
 }
 
-async function loadVoices() {
-	const base = g.config.nspeech.baseUrl;
-	const res = await fetch(`${base}/voices`, { signal: AbortSignal.timeout(5000) });
-	if (!res.ok) throw new Error(`/voices HTTP ${res.status}`);
-	const data = await res.json();
-	const select = el['voice-select'].querySelector('select');
-	select.replaceChildren();
-	const def = new Option('default voice', '');
-	select.add(def);
-	for (const v of data.voices || []) select.add(new Option(v.name, v.name));
-	if (g.config.nspeech.voice) select.value = g.config.nspeech.voice;
-}
+// ################################# TTS (nSpeech v3, config pane + SpeechPlayer)
 
 function listen() {
 	if (g.mode === 'edit') applyEdit();
-	g.tts.chunks = buildChunks(markdownToText(g.markdown));
-	if (!g.tts.chunks.length) { status('Nothing to speak.'); return; }
-	g.tts.index = 0;
-	g.tts.playing = true;
-	el['btn-stop'].disabled = false;
-	playChunk();
+	const fm = nui.util.parseFrontmatter(g.markdown);
+	const text = (fm ? fm.content : g.markdown).trim();
+	if (!text) { status('Nothing to speak.'); return; }
+	g.tts.speak(text);
 }
 
-function playChunk() {
-	const t = g.tts;
-	if (t.index >= t.chunks.length) { stopTts(); status('Playback finished.'); return; }
-	const cfg = g.config.nspeech;
-	const params = new URLSearchParams({ text: t.chunks[t.index], output_format: cfg.outputFormat });
-	const voice = el['voice-select'].querySelector('select').value;
-	if (voice) params.set('voice_name', voice);
-	t.audio.src = `${cfg.baseUrl}/tts?${params}`;
-	t.audio.play();
-	el['btn-listen'].disabled = true;
-	status(`Speaking ${t.index + 1}/${t.chunks.length}`);
-}
+// Player state → status bar transport + listen button icon
+function ttsState(state, time) {
+	const stop = el['tts-stop'];
+	const progress = el['tts-progress'];
+	const icon = el['btn-listen'].querySelector('nui-icon');
+	const fmt = (s) => `${(s / 60) | 0}:${String((s | 0) % 60).padStart(2, '0')}`;
 
-function nextChunk() {
-	g.tts.index++;
-	playChunk();
-}
-
-function stopTts() {
-	const t = g.tts;
-	t.audio.pause();
-	t.audio.removeAttribute('src');
-	t.audio.load();
-	t.playing = false;
-	t.chunks = [];
-	t.index = 0;
-	el['btn-stop'].disabled = true;
-	el['btn-listen'].disabled = !g.nspeechOk || !g.markdown;
-}
-
-// Plain-text extraction from Markdown source (deterministic, no DOM).
-function markdownToText(md) {
-	const fm = nui.util.parseFrontmatter(md);
-	let t = fm ? fm.content : md;
-	t = t
-		.replace(/```[\s\S]*?```/g, ' ')          // fenced code
-		.replace(/`([^`]*)`/g, '$1')              // inline code
-		.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // images → alt
-		.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')  // links → text
-		.replace(/^\s{0,3}#{1,6}\s+/gm, '')       // headings
-		.replace(/^\s*[-*+]\s+/gm, '')            // list markers
-		.replace(/^\s*\d+\.\s+/gm, '')
-		.replace(/^\s*>\s?/gm, '')                // blockquotes
-		.replace(/^\s*\|.*\|\s*$/gm, ' ')         // tables
-		.replace(/(\*\*|__)(.*?)\1/g, '$2')       // bold
-		.replace(/(\*|_)(.*?)\1/g, '$2')          // italic
-		.replace(/~~(.*?)~~/g, '$1')              // strike
-		.replace(/<[^>]+>/g, ' ')                 // stray HTML
-		.replace(/\\([\\`*_[\]])/g, '$1')         // escapes
-		.replace(/[ \t]+/g, ' ')
-		.replace(/\n{3,}/g, '\n\n');
-	return t.trim();
-}
-
-// Sentence-aware chunking: pack sentences up to maxChunkChars,
-// hard-split oversize sentences at the last space.
-function buildChunks(text) {
-	const max = g.config.nspeech.maxChunkChars;
-	const sentences = text.match(/[^.!?…\n]+[.!?…]*\s*/g) || [];
-	const chunks = [];
-	let cur = '';
-	for (const s of sentences) {
-		if (s.length > max) {
-			if (cur) { chunks.push(cur.trim()); cur = ''; }
-			let rest = s;
-			while (rest.length > max) {
-				let cut = rest.lastIndexOf(' ', max);
-				if (cut < max / 2) cut = max;
-				chunks.push(rest.slice(0, cut).trim());
-				rest = rest.slice(cut);
-			}
-			cur = rest;
-			continue;
-		}
-		if ((cur + s).length > max && cur) { chunks.push(cur.trim()); cur = ''; }
-		cur += s;
+	switch (state) {
+		case 'loading':
+			stop.classList.add('active');
+			progress.textContent = 'Requesting audio…';
+			icon.setAttribute('name', 'stop_circle');
+			break;
+		case 'playing':
+			stop.classList.add('active');
+			icon.setAttribute('name', 'pause_circle');
+			break;
+		case 'paused':
+			progress.textContent = 'Paused';
+			icon.setAttribute('name', 'play_circle');
+			break;
+		case 'time':
+			if (g.tts.isActive()) progress.textContent = fmt(time);
+			break;
+		case 'idle':
+			stop.classList.remove('active');
+			progress.textContent = '';
+			icon.setAttribute('name', 'volume_up');
+			break;
 	}
-	if (cur.trim()) chunks.push(cur.trim());
-	return chunks;
 }
 
 // ################################# MISC
 
 function status(msg) {
-	el.status.textContent = msg;
+	const t = document.getElementById('status-text');
+	if (t) t.textContent = msg;
 	console.log('[nMDV]', msg);
 }
