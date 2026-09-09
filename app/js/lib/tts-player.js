@@ -1,8 +1,9 @@
 // ============================================
 // TtsPlayerHost — floating collapsible TTS chrome
 // ============================================
-// Close (X) dismisses chrome only. Audio stays until speak() or stop().
-// Collapsed chip = mini playback (play/pause icon + progress), not volume.
+// Close (X) hard-stops generation + playback; separate dismiss() only
+// hides the chrome and keeps the download alive. Collapsed chip = mini
+// playback (play/pause icon + progress), not volume.
 
 export class TtsPlayerHost {
     constructor({ controller, mount, nui = null, downloadName = null }) {
@@ -47,8 +48,8 @@ export class TtsPlayerHost {
             '<button type="button" data-tts-action="download" aria-label="Download audio">',
             '<nui-icon name="download"></nui-icon>',
             '</button></nui-button>',
-            '<nui-button variant="icon" class="tts-player-btn tts-player-btn-ghost" title="Hide player (keeps audio)">',
-            '<button type="button" data-tts-action="dismiss" aria-label="Hide player">',
+            '<nui-button variant="icon" class="tts-player-btn tts-player-btn-ghost" title="Close player (stops audio)">',
+            '<button type="button" data-tts-action="dismiss" aria-label="Close player">',
             '<nui-icon name="close"></nui-icon>',
             '</button></nui-button>',
             '</div>',
@@ -80,7 +81,7 @@ export class TtsPlayerHost {
                 this.reveal();
                 this.controller.togglePause();
             } else if (action === 'dismiss') {
-                this.dismiss();
+                this.close();
             } else if (action === 'download') {
                 this.download();
             }
@@ -111,6 +112,14 @@ export class TtsPlayerHost {
     dismiss() {
         this._dismissed = true;
         this.controller.dismiss();
+        this._hide();
+    }
+
+    // Hard close (X): stop generation + playback. Distinct from dismiss(),
+    // which only hides the chrome and keeps the download alive.
+    close() {
+        this._dismissed = true;
+        this.controller.stop();
         this._hide();
     }
 

@@ -69,22 +69,27 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 			pref.set(PREF.engine, t.engine);
 			pref.set(PREF.voice, '');
 			updateVoiceSelect();
+			t._onSettingsChanged();
 		});
 		el.voice.addEventListener('nui-change', (e) => {
 			t.voice = e.detail?.values?.[0] || '';
 			pref.set(PREF.voice, t.voice);
+			t._onSettingsChanged();
 		});
 		el.speed.querySelector('input').addEventListener('change', (e) => {
 			t.speed = parseFloat(e.target.value) || 1.0;
 			pref.set(PREF.speed, String(t.speed));
+			t._onSettingsChanged();
 		});
 		el.clean && box(el.clean).addEventListener('change', (e) => {
 			t.clean = e.target.checked;
 			pref.set(PREF.clean, t.clean ? 'true' : 'off');
+			t._onSettingsChanged();
 		});
 		el.stitch && box(el.stitch).addEventListener('change', (e) => {
 			t.stitch = e.target.checked;
 			pref.set(PREF.stitch, String(t.stitch));
+			t._onSettingsChanged();
 		});
 	}
 
@@ -210,6 +215,11 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 	};
 
 	t.stop = () => t.player?.stop();
+	// A settings change invalidates the in-flight generation: stop the download
+	// AND discard its buffered bytes (SpeechPlayer.stop clears _collected) so
+	// the next speak() regenerates from the new settings. No-op when idle.
+	// Shared by engine/voice/speed/clean/stitch. (ported from chat controller)
+	t._onSettingsChanged = () => t.stop();
 	t.isActive = () => t.player?.isActive?.() ?? false;
 
 	return t;

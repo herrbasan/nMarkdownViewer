@@ -104,8 +104,10 @@ async function boot() {
 
 	// OS-opened file (double-click / CLI arg): root the tree at its folder, open it
 	if (g.mainEnv?.filePath) {
-		await rootTree({ name: g.npath.basename(g.npath.dirname(g.mainEnv.filePath)), fs: nativeFsAdapter(), rootPath: g.npath.dirname(g.mainEnv.filePath) });
-		await openTreePath(g.mainEnv.filePath);
+		await rootTree(
+			{ name: g.npath.basename(g.npath.dirname(g.mainEnv.filePath)), fs: nativeFsAdapter(), rootPath: g.npath.dirname(g.mainEnv.filePath) },
+			g.mainEnv.filePath
+		);
 	}
 
 	status(g.tts.available ? 'Ready. Open a folder to begin.' : `nSpeech unreachable at ${g.config.nspeech.baseUrl} — TTS disabled`);
@@ -145,8 +147,7 @@ async function bootElectron() {
 	// Single-instance handoff: the main process forwards OS-opened files
 	window.nmdv_node.ipcRenderer.on('os-open-file', async (e, filePath) => {
 		const dir = g.npath.dirname(filePath);
-		await rootTree({ name: g.npath.basename(dir), fs: nativeFsAdapter(), rootPath: dir });
-		await openTreePath(filePath);
+		await rootTree({ name: g.npath.basename(dir), fs: nativeFsAdapter(), rootPath: dir }, filePath);
 	});
 }
 
@@ -233,18 +234,48 @@ async function openFolder() {
 	await openFirstMarkdown();
 }
 
-async function rootTree(root) {
+// Tracks the in-flight background directory scan so selection can be revealed
+// once the tree lands (see revealAfterScan). Settles only, never rejects.
+let treeScan = Promise.resolve();
+
+// Kick the directory scan off WITHOUT awaiting. Called only AFTER a document
+// has been rendered, so the (potentially heavy) tree build never delays it.
+function scanTreeInBackground() {
+	const tree = el['file-tree'];
+	treeScan = tree.setRoot({ name: g.treeName || 'Folder', path: g.rootPath })
+		.catch((err) => console.error('nmdv: directory scan failed', err));
+}
+
+// Best-effort select of `path` in the tree, deferred until the scan finished
+// (the opened document may already be rendered; the node just isn't there yet).
+function revealAfterScan(path) {
+	if (!path) return;
+	treeScan.then(() => selectInTree(path.split(/[/\\]/).pop()));
+}
+
+async function rootTree(root, openPath = null) {
 	g.fs = root.fs;
 	g.rootPath = root.rootPath;
+	g.treeName = root.name;
 	const tree = el['file-tree'];
 	tree.setProvider(g.fs.readdir);
-	await tree.setRoot({ name: root.name, path: root.rootPath });
 	setBtn('btn-refresh', false);
 	setBtn('btn-collapse', false);
 	status(`Folder: ${root.name}`);
+	if (openPath) {
+		// Open the requested document FIRST — the directory scan runs after,
+		// in the background, so it never delays the render.
+		await openDocumentAt(openPath);
+		scanTreeInBackground();
+		revealAfterScan(openPath);
+	}
+	// No specific file: the caller (openFirstMarkdown) opens one first, then
+	// starts the scan — guaranteeing the document renders before the tree.
 }
 
-// Open the alphabetically first Markdown file in the tree root.
+// Open the alphabetically first Markdown file in the tree root. The document
+// renders first; only then does the (potentially heavy) tree scan run in the
+// background, revealing the opened file once its node exists.
 async function openFirstMarkdown() {
 	const entries = await g.fs.readdir(g.rootPath);
 	const first = entries
@@ -252,9 +283,12 @@ async function openFirstMarkdown() {
 		.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))[0];
 	if (!first) {
 		status('No Markdown files in this folder.');
+		scanTreeInBackground();
 		return;
 	}
-	await openTreePath(first.path);
+	const opened = await openDocumentAt(first.path);
+	scanTreeInBackground();                 // heavy scan begins after the render
+	if (opened) revealAfterScan(first.path);
 }
 
 async function onTreeFile(entry) {
@@ -268,15 +302,24 @@ async function onTreeFile(entry) {
 
 async function openTreePath(path) {
 	if (path === g.fileHandle?._nmdvPath) return;
-	if (!await confirmDiscard()) {
+	if (!await openDocumentAt(path)) {
+		// User kept the current document — restore its tree selection.
 		if (g.fileHandle?._nmdvPath) el['file-tree'].select(g.fileHandle._nmdvPath);
 		return;
 	}
+	el['file-tree'].select(path);
+}
+
+// Read + render a document at `path`. Deliberately does NOT touch the file
+// tree, so callers can open a specific file before (or while) the directory
+// scan is still running. Returns true when a document was opened.
+async function openDocumentAt(path) {
+	if (!await confirmDiscard()) return false;
 	const handle = await g.fs.readFileHandle(path);
 	handle._nmdvPath = path;
 	const file = await handle.getFile();
 	loadDocument(handle, file.name, await file.text());
-	el['file-tree'].select(path);
+	return true;
 }
 
 async function openFile() {

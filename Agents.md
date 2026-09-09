@@ -71,6 +71,15 @@ scripts/serve.js        zero-dep static dev server
   files, revisit before ever rendering untrusted content.
 - **nSpeech port/CORS** — see Open Questions in the spec.
 
+## Debugging Gotchas (learned the hard way)
+
+- **`SyntaxError: Unexpected token ','` (bare, no stack) = a *parse* error in a JS file, NOT an Electron/preload/contextIsolation issue.** Don't blame the shell or the `electron_helper` submodule. Find the offending file:line.
+- **Reproduce in the browser, not Electron.** `node scripts/serve.js` → open `http://127.0.0.1:5581/` (Chrome). Read the exact location via CDP `Runtime.exceptionThrown` (`url`, `lineNumber`, `columnNumber`) — Playwright's `pageerror` gives the message but often no stack for parse errors. The Electron renderer parses the module graph identically to the browser, so if it breaks in Electron it breaks here too.
+- **`node --check` is NOT the oracle.** It checks CJS script syntax; it does not reliably reproduce the ESM-module parse the browser uses, so it can pass while the page still fails to load. The browser/Electron load is the real oracle.
+- **A multi-region edit to `app.js` can silently corrupt a *different* region** — a residual fragment glued into a function you didn't intend to touch (e.g. `=> {, .dirname(filePath);` on the `os-open-file` handler). After any edit, re-read the entire enclosing function, not just the span you think you changed.
+- **`app.js` is the stage; Electron main is a thin shell.** A startup failure is far more likely a typo in `app/js/app.js` than in `app/js/main.js` or the `electron_helper` submodule.
+- 2026-09-09 incident: stray `, .dirname(filePath);` glued onto a `=> {` at `app.js:147` broke startup with the above error. Root cause was a single edit fragment, not the framework.
+
 ## File Association Pattern (M5, for the next major release)
 
 Proper Windows file associations follow the SoundApp pattern
