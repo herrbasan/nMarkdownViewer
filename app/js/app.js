@@ -10,6 +10,7 @@ import '../modules/nui_wc2/NUI/lib/modules/nui-file-tree.js';
 import '../modules/nui_wc2/NUI/lib/modules/nui-rich-text.js';
 import { htmlToMarkdown } from './md-serializer.js';
 import { createTts } from './tts.js';
+import { prefs } from './prefs.js';
 import { TtsPlayerHost } from './lib/tts-player.js';
 
 const g = {
@@ -28,7 +29,7 @@ const g = {
 };
 
 const el = {};
-for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-collapse', 'btn-refresh', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-model', 'cfg-model-wrap', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status']) {
+for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-collapse', 'btn-refresh', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-model', 'cfg-model-wrap', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status', 'cfg-startup', 'btn-startup-choose', 'btn-startup-clear', 'startup-path']) {
 	el[id] = document.getElementById(id);
 }
 
@@ -40,6 +41,10 @@ boot().catch(err => {
 async function boot() {
 	if (window.electron_helper) await bootElectron();
 	else await bootBrowser();
+
+	// Persistent prefs BEFORE anything reads them (TTS, startup folder).
+	// Electron: prefs.json in userData; browser: localStorage.
+	await prefs.init(g.mainEnv?.userData);
 
 	// Window chrome (title bar + status bar) — same in browser and Electron
 	g.win = appWindow({
@@ -61,6 +66,8 @@ async function boot() {
 
 	el['btn-open-folder'].addEventListener('click', openFolder);
 	el['btn-open-file'].addEventListener('click', openFile);
+	el['btn-startup-choose'].addEventListener('click', chooseStartupDir);
+	el['btn-startup-clear'].addEventListener('click', clearStartupDir);
 	el['btn-refresh'].addEventListener('click', () => el['file-tree'].refresh());
 	el['btn-collapse'].addEventListener('click', () => el['file-tree'].collapseAll());
 	el['tree-search'].addEventListener('nui-input', (e) => {
@@ -108,6 +115,22 @@ async function boot() {
 			{ name: g.npath.basename(g.npath.dirname(g.mainEnv.filePath)), fs: nativeFsAdapter(), rootPath: g.npath.dirname(g.mainEnv.filePath) },
 			g.mainEnv.filePath
 		);
+	} else if (g.mainEnv) {
+		// No file attached: fall back to the persisted startup folder (if any).
+		// A missing dir (unmounted drive, renamed) is a visible no-op, not a
+		// crash — the pref survives so a remounted drive works again.
+		const dir = prefs.get('startupDir');
+		if (dir) {
+			try {
+				const st = await g.nfs.stat(dir);
+				if (!st.isDirectory()) throw new Error('not a directory');
+				await rootTree({ name: g.npath.basename(dir), fs: nativeFsAdapter(), rootPath: dir });
+				await openFirstMarkdown();
+			} catch (err) {
+				status(`Startup folder unavailable: ${dir} (${err.message})`);
+			}
+		}
+		updateStartupUi();
 	}
 
 	status(g.tts.available ? 'Ready. Open a folder to begin.' : `nSpeech unreachable at ${g.config.nspeech.baseUrl} — TTS disabled`);
@@ -137,6 +160,7 @@ async function bootBrowser() {
 
 async function bootElectron() {
 	document.body.classList.add('electron'); // hides Open File (OS provides it)
+	el['cfg-startup'].hidden = false; // startup folder is Electron-only
 	g.mainEnv = await electron_helper.global.get('env');
 	g.npath = window.nmdv_node.path;
 	g.nfs = window.nmdv_node.fsp;
@@ -232,6 +256,28 @@ async function openFolder() {
 	}
 	await rootTree({ name: handle.name, fs: fsAccessAdapter(handle), rootPath: '' });
 	await openFirstMarkdown();
+}
+
+// ################################# STARTUP FOLDER (Electron only)
+// Browser FSA permissions don't survive restarts, so a persisted default
+// dir is only meaningful in the Electron shell.
+
+function updateStartupUi() {
+	const dir = prefs.get('startupDir');
+	el['startup-path'].textContent = dir || 'Not set';
+	el['btn-startup-clear'].hidden = !dir;
+}
+
+async function chooseStartupDir() {
+	const result = await electron_helper.dialog.showOpenDialog({ properties: ['openDirectory'], title: 'Set Startup Folder' });
+	if (result.canceled || !result.filePaths?.length) return;
+	prefs.set('startupDir', result.filePaths[0]);
+	updateStartupUi();
+}
+
+function clearStartupDir() {
+	prefs.remove('startupDir');
+	updateStartupUi();
 }
 
 // Tracks the in-flight background directory scan so selection can be revealed

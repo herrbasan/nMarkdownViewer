@@ -54,6 +54,7 @@ app/
   css/main.css          layout only — never nui-* component styling
   js/app.js             stage: all application logic
   js/tts.js             TTS config pane + playback controller
+  js/prefs.js           persistent prefs (Electron: userData/prefs.json; browser: localStorage)
   js/lib/nspeech-client.js   vendored nSpeech SDK (SpeechPlayer) — from LLM-Gateway-Chat lib/tts
   js/md-serializer.js   HTML → Markdown (ours, highest-risk module)
   modules/nui_wc2/      NUI submodule (read-only; upstream work on branches)

@@ -124,6 +124,18 @@
 						<label for="cfg-stitch">Seamless joins (slow)</label>
 					</nui-checkbox>
 				</nui-input-group>
+				<div id="cfg-startup" class="sidebar-section" hidden>
+					<span class="config-title">Startup folder</span>
+					<nui-input-group class="sidebar-section">
+						<label id="startup-path">Not set</label>
+						<nui-button variant="ghost" id="btn-startup-choose">
+							<button type="button"><nui-icon name="folder_open"></nui-icon> Choose…</button>
+						</nui-button>
+						<nui-button variant="ghost" id="btn-startup-clear" hidden>
+							<button type="button"><nui-icon name="close"></nui-icon> Clear</button>
+						</nui-button>
+					</nui-input-group>
+				</div>
 				<div id="cfg-status" class="config-status" hidden></div>
 			</div>
 		</nui-sidebar>

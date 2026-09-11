@@ -11,9 +11,11 @@
 //   the user's explicit paid action.
 // - Engine switching (POST /v1/admin/engine) is not offered — that's
 //   dashboard territory.
-// - Prefs live in localStorage (nmdv-tts-*).
+// - Prefs live in the shared prefs store (js/prefs.js): prefs.json in
+//   Electron's userData, localStorage in the browser.
 
 import { SpeechPlayer } from './lib/nspeech-client.js';
+import { prefs } from './prefs.js';
 
 const SENTINEL = 'nspeech'; // "whatever the dashboard selected"
 const PREF = { engine: 'nmdv-tts-engine', model: 'nmdv-tts-model', voice: 'nmdv-tts-voice', speed: 'nmdv-tts-speed', clean: 'nmdv-tts-clean', stitch: 'nmdv-tts-stitch' };
@@ -35,10 +37,7 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 	};
 
 	const el = elements;
-	const pref = {
-		get: (k) => localStorage.getItem(k),
-		set: (k, v) => localStorage.setItem(k, v)
-	};
+	const pref = prefs; // stored settings (survive app restarts)
 	// Checkbox ids sit on the <input> itself — normalize to the input element
 	const box = (e) => e.tagName === 'INPUT' ? e : e.querySelector('input');
 

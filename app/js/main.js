@@ -16,6 +16,7 @@ const env = {
 	isPackaged: app.isPackaged,
 	app_path: app.getAppPath(),
 	base_path: app.getAppPath(),
+	userData: app.getPath('userData'), // renderer prefs.json location
 	filePath: null
 };
 
