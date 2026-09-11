@@ -66,12 +66,17 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 
 	function wireEvents() {
 		el.engine.addEventListener('nui-change', (e) => {
-			t.engine = e.detail?.values?.[0] || SENTINEL;
-			t.voice = '';
-			t.model = '';
-			pref.set(PREF.engine, t.engine);
-			pref.set(PREF.voice, '');
-			pref.set(PREF.model, '');
+			const next = e.detail?.values?.[0] || SENTINEL;
+			// setValue() during init re-fires nui-change for the RESTORED engine —
+			// that's not a user switch, so the stored voice/model must survive it.
+			if (next !== t.engine) {
+				t.engine = next;
+				t.voice = '';
+				t.model = '';
+				pref.set(PREF.engine, t.engine);
+				pref.set(PREF.voice, '');
+				pref.set(PREF.model, '');
+			}
 			updateVoiceSelect();
 			updateModelSelect();
 			t._onSettingsChanged();
