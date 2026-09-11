@@ -28,7 +28,7 @@ const g = {
 };
 
 const el = {};
-for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-collapse', 'btn-refresh', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status']) {
+for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-collapse', 'btn-refresh', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-model', 'cfg-model-wrap', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status']) {
 	el[id] = document.getElementById(id);
 }
 
@@ -88,7 +88,7 @@ async function boot() {
 	// TTS config pane + playback
 	g.tts = createTts({
 		baseUrl: g.config.nspeech.baseUrl,
-		elements: { engine: el['cfg-engine'], voice: el['cfg-voice'], speed: el['cfg-speed'], clean: el['cfg-clean'], stitch: el['cfg-stitch'], status: el['cfg-status'] },
+		elements: { engine: el['cfg-engine'], model: el['cfg-model'], modelWrap: el['cfg-model-wrap'], voice: el['cfg-voice'], speed: el['cfg-speed'], clean: el['cfg-clean'], stitch: el['cfg-stitch'], status: el['cfg-status'] },
 		onStatus: status,
 		onState: ttsState
 	});

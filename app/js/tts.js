@@ -16,18 +16,20 @@
 import { SpeechPlayer } from './lib/nspeech-client.js';
 
 const SENTINEL = 'nspeech'; // "whatever the dashboard selected"
-const PREF = { engine: 'nmdv-tts-engine', voice: 'nmdv-tts-voice', speed: 'nmdv-tts-speed', clean: 'nmdv-tts-clean', stitch: 'nmdv-tts-stitch' };
+const PREF = { engine: 'nmdv-tts-engine', model: 'nmdv-tts-model', voice: 'nmdv-tts-voice', speed: 'nmdv-tts-speed', clean: 'nmdv-tts-clean', stitch: 'nmdv-tts-stitch' };
 
 export function createTts({ baseUrl, elements, onStatus, onState }) {
 	const t = {
 		available: false,
 		engine: SENTINEL,
+		model: '', // cloud sub-model slug (e.g. minimax_speech_2_8_hd)
 		voice: '',
 		speed: 1.0,
 		clean: true,
 		stitch: false,
 		engines: [],
 		voicesByEngine: new Map(),
+		modelsByEngine: new Map(), // engine name → [{ id, label, default }] (cloud, >1 entry = selectable)
 		currentEngine: null, // actual name behind the sentinel
 		player: null
 	};
@@ -44,6 +46,7 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 
 	t.init = async () => {
 		t.engine = pref.get(PREF.engine) || SENTINEL;
+		t.model = pref.get(PREF.model) || '';
 		t.voice = pref.get(PREF.voice) || '';
 		t.speed = parseFloat(pref.get(PREF.speed)) || 1.0;
 		t.clean = pref.get(PREF.clean) !== 'off'; // default on
@@ -66,9 +69,17 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 		el.engine.addEventListener('nui-change', (e) => {
 			t.engine = e.detail?.values?.[0] || SENTINEL;
 			t.voice = '';
+			t.model = '';
 			pref.set(PREF.engine, t.engine);
 			pref.set(PREF.voice, '');
+			pref.set(PREF.model, '');
 			updateVoiceSelect();
+			updateModelSelect();
+			t._onSettingsChanged();
+		});
+		el.model.addEventListener('nui-change', (e) => {
+			t.model = e.detail?.values?.[0] || '';
+			pref.set(PREF.model, t.model);
 			t._onSettingsChanged();
 		});
 		el.voice.addEventListener('nui-change', (e) => {
@@ -99,16 +110,30 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 		const abort = new AbortController();
 		const timer = setTimeout(() => abort.abort(), 8000);
 		try {
-			const [engRes, voiceRes] = await Promise.all([
-				fetch(`${baseUrl}/v1/admin/engines`, { signal: abort.signal }),
-				fetch(`${baseUrl}/v1/voices`, { signal: abort.signal })
-			]);
-			if (!engRes.ok) throw new Error(`engines HTTP ${engRes.status}`);
+const [engRes, voiceRes, modelRes] = await Promise.all([
+			fetch(`${baseUrl}/v1/admin/engines`, { signal: abort.signal }),
+			fetch(`${baseUrl}/v1/voices`, { signal: abort.signal }),
+			fetch(`${baseUrl}/v1/models`, { signal: abort.signal }).catch(() => null)
+		]);
+		if (!engRes.ok) throw new Error(`engines HTTP ${engRes.status}`);
 
-			const engData = await engRes.json();
-			t.engines = Array.isArray(engData.engines) ? engData.engines : [];
-			t.currentEngine = engData.current || null;
-			t.voicesByEngine = new Map([[SENTINEL, voiceRes.ok ? (await voiceRes.json()).voices || [] : []]]);
+		const engData = await engRes.json();
+		t.engines = Array.isArray(engData.engines) ? engData.engines : [];
+		t.currentEngine = engData.current || null;
+		t.voicesByEngine = new Map([[SENTINEL, voiceRes.ok ? (await voiceRes.json()).voices || [] : []]]);
+
+		// Cloud sub-model catalog (chat-controller pattern). Entries carry
+		// { id (slug), engine, provider_model, label, default }; >1 per
+		// engine = user-selectable. The 'nspeech' sentinel is skipped.
+		t.modelsByEngine = new Map();
+		if (modelRes?.ok) {
+			const data = await modelRes.json();
+			for (const m of data.data || []) {
+				if (!m.engine || !m.id || m.id === SENTINEL) continue;
+				if (!t.modelsByEngine.has(m.engine)) t.modelsByEngine.set(m.engine, []);
+				t.modelsByEngine.get(m.engine).push({ id: m.id, label: m.label || m.id, default: !!m.default });
+			}
+		}
 
 			// Resident local engines (gpu:false, venv present, not current) —
 			// callable WITHOUT switching, like cloud providers but free + local.
@@ -128,12 +153,14 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 			t.available = true;
 			updateEngineSelect();
 			updateVoiceSelect();
-			setStatus(null);
-		} catch (err) {
-			t.available = false;
-			t.engines = [];
-			t.voicesByEngine.clear();
-			setStatus(`TTS unavailable (${err.message})`);
+		updateModelSelect();
+		setStatus(null);
+	} catch (err) {
+		t.available = false;
+		t.engines = [];
+		t.voicesByEngine.clear();
+		t.modelsByEngine.clear();
+		setStatus(`TTS unavailable (${err.message})`);
 		} finally {
 			clearTimeout(timer);
 		}
@@ -190,6 +217,32 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 		el.voice.setValue(t.voice);
 	}
 
+	// Cloud sub-model select (chat-controller pattern): visible only when the
+	// engine has >1 catalog models. Local engines and the sentinel are
+	// dashboard-owned; the provider's default model is the fallback.
+	function updateModelSelect() {
+		const models = t.modelsByEngine.get(t.engine) || [];
+		el.modelWrap.hidden = models.length <= 1;
+		if (models.length <= 1) return;
+		const items = models.map(m => ({ value: m.id, label: m.default ? `${m.label} (default)` : m.label }));
+		el.model.setItems(items);
+		if (!models.some(m => m.id === t.model)) {
+			if (t.model) onStatus?.(`Stored model "${t.model}" not in catalog for ${t.engine} — using default`);
+			t.model = (models.find(m => m.default) || models[0]).id;
+			pref.set(PREF.model, t.model);
+		}
+		el.model.setValue(t.model);
+	}
+
+	// The `model` for the speech request: the stored cloud sub-model slug when
+	// valid and selectable (>1 catalog models), else the bare engine name —
+	// the provider default then applies server-side.
+	function resolveModel() {
+		const models = t.modelsByEngine.get(t.engine) || [];
+		if (t.model && models.length > 1 && models.some(m => m.id === t.model)) return t.model;
+		return t.engine;
+	}
+
 	function setStatus(msg) {
 		if (!el.status) return;
 		el.status.textContent = msg || '';
@@ -203,7 +256,7 @@ export function createTts({ baseUrl, elements, onStatus, onState }) {
 		if (!t.available) { onStatus?.('TTS unavailable'); return; }
 		if (!t.voice) { onStatus?.('Select a voice first (engine has none)'); return; }
 		t.player.toggle({
-			model: t.engine,
+			model: resolveModel(),
 			input: text,
 			voice: t.voice,
 			format: 'mp3',
