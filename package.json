@@ -1,6 +1,6 @@
 {
 	"name": "nmarkdownviewer",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Markdown viewer/editor with integrated text-to-speech",
 	"main": "app/js/main.js",
 	"scripts": {

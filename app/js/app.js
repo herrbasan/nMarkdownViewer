@@ -448,7 +448,8 @@ function renderView() {
 	if (welcome) welcome.remove();
 	const viewer = document.createElement('nui-markdown');
 	viewer.id = 'viewer';
-	viewer.setAttribute('frontmatter', 'show');
+	// No frontmatter attribute — nui-markdown defaults to 'collapsed'
+	// (metadata card behind a closed <details>) since the md-blocks update.
 	const s = document.createElement('script');
 	s.type = 'text/markdown';
 	s.textContent = g.markdown;
