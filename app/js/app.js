@@ -79,6 +79,8 @@ async function boot() {
 	el['btn-save'].addEventListener('click', writeFile);
 	el['btn-listen'].addEventListener('click', listen);
 
+	nui.util.setMarkdownImageRewrite(resolveImageUri);
+
 	el['file-tree'].addEventListener('nui-file-select', (e) => onTreeFile(e.detail.entry));
 	el['file-tree'].addEventListener('nui-tree-error', (e) => status(`Cannot read ${e.detail.entry.path}: ${e.detail.error}`));
 
@@ -164,6 +166,7 @@ async function bootElectron() {
 	g.mainEnv = await electron_helper.global.get('env');
 	g.npath = window.nmdv_node.path;
 	g.nfs = window.nmdv_node.fsp;
+	g.fsSync = window.nmdv_node.fs;
 	const fp = g.mainEnv.isPackaged ? g.npath.dirname(g.mainEnv.app_path) : g.mainEnv.app_path;
 	g.config = await electron_helper.tools.readJSON(g.npath.join(fp, 'config.json'));
 	electron_helper.window.show();
@@ -417,6 +420,11 @@ async function onDrop(e) {
 		return;
 	}
 	if (!await confirmDiscard()) return;
+	if (window.electron_helper && file.path) {
+		const dir = g.npath.dirname(file.path);
+		await rootTree({ name: g.npath.basename(dir), fs: nativeFsAdapter(), rootPath: dir }, file.path);
+		return;
+	}
 	loadDocument(handle, file.name, await file.text());
 	selectInTree(file.name);
 }
@@ -475,6 +483,41 @@ async function writeFile() {
 
 // ################################# VIEW / EDIT
 
+function resolveImageUri(url) {
+	if (!url) return url;
+	// Ignore absolute external URLs, data URIs, and already-resolved schemes
+	if (/^(https?|data|raum|file):/i.test(url)) return url;
+
+	if (window.electron_helper) {
+		const docPath = g.fileHandle?._nmdvPath;
+		const docDir = docPath ? g.npath.dirname(docPath) : g.rootPath;
+		if (!docDir) return url;
+
+		const [cleanUrl, ...rest] = url.split(/([?#].*)/);
+		const extra = rest.join('');
+
+		let target;
+		if (/^[a-zA-Z]:[\\/]/.test(cleanUrl)) {
+			target = g.npath.normalize(cleanUrl);
+		} else {
+			const rel = cleanUrl.replace(/^(\.?[\\/])+/, '');
+			target = g.npath.join(docDir, rel);
+
+			// Fallback: if not found in docDir, check workspace rootPath if different
+			if (g.fsSync && g.rootPath && docDir !== g.rootPath && !g.fsSync.existsSync(target)) {
+				const fromRoot = g.npath.join(g.rootPath, rel);
+				if (g.fsSync.existsSync(fromRoot)) target = fromRoot;
+			}
+		}
+
+		if (window.electron_helper.tools?.getFileURL) {
+			return window.electron_helper.tools.getFileURL(target) + extra;
+		}
+		return `raum:///${target.replace(/\\/g, '/')}${extra}`;
+	}
+	return url;
+}
+
 function setMode(mode) {
 	g.mode = mode;
 	document.getElementById('md-main').hidden = mode === 'edit';
@@ -501,6 +544,15 @@ function renderView() {
 	s.textContent = g.markdown;
 	viewer.appendChild(s);
 	el.page.appendChild(viewer);
+
+	if (window.electron_helper) {
+		for (const img of viewer.querySelectorAll('img')) {
+			const src = img.getAttribute('src');
+			if (src && !/^(https?|data|raum|file):/i.test(src)) {
+				img.setAttribute('src', resolveImageUri(src));
+			}
+		}
+	}
 }
 
 function toggleEdit() {

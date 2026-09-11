@@ -17,8 +17,10 @@
 		// Preload sets window.electron_helper first, so this is browser-safe.
 		if (window.electron_helper) {
 			window.nmdv_node = {
+				fs: require('node:fs'),
 				fsp: require('node:fs/promises'),
 				path: require('node:path'),
+				url: require('node:url'),
 				ipcRenderer: require('electron').ipcRenderer
 			};
 		}

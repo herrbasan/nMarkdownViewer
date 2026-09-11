@@ -137,7 +137,16 @@ function serializeInline(node) {
 		}
 		case 'IMG': {
 			const alt = node.getAttribute('alt') || '';
-			const src = node.getAttribute('src') || '';
+			let src = node.getAttribute('src') || '';
+			if (/^raum:\/*/i.test(src) && window.nmdv_node?.url && window.nmdv?.fileHandle?._nmdvPath) {
+				try {
+					const { fileURLToPath } = window.nmdv_node.url;
+					const abs = fileURLToPath(src.replace(/^raum:\/*/, 'file:///'));
+					const docDir = window.nmdv_node.path.dirname(window.nmdv.fileHandle._nmdvPath);
+					const rel = window.nmdv_node.path.relative(docDir, abs).replace(/\\/g, '/');
+					if (!rel.startsWith('..')) src = rel;
+				} catch {}
+			}
 			return `![${alt}](${src})`;
 		}
 		case 'BR': return '  \n';
