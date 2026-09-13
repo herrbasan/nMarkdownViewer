@@ -17,14 +17,28 @@ const FLUSH_MS = 250;
 let data = {};
 let filePath = null; // Electron only
 let flushTimer = null;
+let writeChain = Promise.resolve(); // serializes writes — no concurrent rename race
 
-async function writeThrough() {
+// Atomic + serialized. A bare writeFile() truncates the target to zero bytes
+// first, so a quit/crash mid-write (e.g. the pagehide flush racing app exit)
+// leaves an empty prefs.json — which then fails JSON.parse at next init.
+// Writing a sibling temp file and renaming over the target makes the swap
+// atomic: an interrupted write can only leave a stray .tmp, never a
+// truncated prefs.json.
+function writeThrough() {
 	const json = JSON.stringify(data, null, '\t');
-	if (filePath) {
-		await window.nmdv_node.fsp.writeFile(filePath, json, 'utf8');
-	} else {
-		localStorage.setItem(LS_KEY, json);
-	}
+	const run = async () => {
+		if (filePath) {
+			const tmpPath = filePath + '.tmp';
+			const fsp = window.nmdv_node.fsp;
+			await fsp.writeFile(tmpPath, json, 'utf8');
+			await fsp.rename(tmpPath, filePath);
+		} else {
+			localStorage.setItem(LS_KEY, json);
+		}
+	};
+	writeChain = writeChain.then(run, run);
+	return writeChain;
 }
 
 function scheduleFlush() {

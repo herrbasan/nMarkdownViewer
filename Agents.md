@@ -80,6 +80,8 @@ scripts/serve.js        zero-dep static dev server
 - **A multi-region edit to `app.js` can silently corrupt a *different* region** — a residual fragment glued into a function you didn't intend to touch (e.g. `=> {, .dirname(filePath);` on the `os-open-file` handler). After any edit, re-read the entire enclosing function, not just the span you think you changed.
 - **`app.js` is the stage; Electron main is a thin shell.** A startup failure is far more likely a typo in `app/js/app.js` than in `app/js/main.js` or the `electron_helper` submodule.
 - 2026-09-09 incident: stray `, .dirname(filePath);` glued onto a `=> {` at `app.js:147` broke startup with the above error. Root cause was a single edit fragment, not the framework.
+- **A 0-byte `prefs.json` is an *interrupted write*, not a corrupt-settings problem.** A bare `fs.writeFile` truncates the target to zero bytes *before* writing, so a quit/crash mid-write — including the `pagehide` flush racing app exit — leaves an empty file. `boot()` calls `prefs.init()` **before** `appWindow(...)`, so `JSON.parse('')` throwing aborts boot right there: the raw `nui-app` shell renders with **no titlebar/statusbar and no listeners** (TTS pane dead, no file opens). Fixed 2026-09-13: `app/js/prefs.js` writes a `.tmp` sibling then renames over the target, serialized through a promise chain — the target is never opened for writing, so it cannot be truncated. Reset by deleting `%APPDATA%\nmarkdownviewer\prefs.json`.
+- 2026-09-13 incident: that 0-byte `prefs.json` broke startup exactly as above; the user's first instinct — "a destroyed config stopped initialization partway" — was correct.
 
 ## File Association Pattern (M5, for the next major release)
 
