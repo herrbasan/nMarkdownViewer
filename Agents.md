@@ -62,7 +62,20 @@ app/
 config.json             nSpeech endpoint, voice, chunk size
 docs/nMarkdownViewer_SPEC.md   spec + dev plan (authoritative)
 scripts/serve.js        zero-dep static dev server
+scripts/create-release.ps1   GitHub release publisher (gh CLI): build + release with
+                             RELEASES/nupkg/setup assets the updater consumes
 ```
+
+## Auto-Update (SoundApp pattern)
+
+Packaged builds check GitHub releases (`herrbasan/nMarkdownViewer`) on startup
+(~1.5 s in, silent; splash window only when a newer tag exists). Machinery lives
+in the `electron_helper` submodule (`update.js`): compares tag semver against
+`app.getVersion()`, downloads `RELEASES` + `*-full.nupkg` from the release
+assets to temp, then feeds that folder to Squirrel's `autoUpdater`.
+Manual check: config pane → Updates (Electron-only section). Releases are
+published with `scripts/create-release.ps1 -Notes "..."` (requires clean,
+pushed `master`; refuses if the tag exists).
 
 ## Known Risk Areas
 
@@ -82,6 +95,8 @@ scripts/serve.js        zero-dep static dev server
 - 2026-09-09 incident: stray `, .dirname(filePath);` glued onto a `=> {` at `app.js:147` broke startup with the above error. Root cause was a single edit fragment, not the framework.
 - **A 0-byte `prefs.json` is an *interrupted write*, not a corrupt-settings problem.** A bare `fs.writeFile` truncates the target to zero bytes *before* writing, so a quit/crash mid-write — including the `pagehide` flush racing app exit — leaves an empty file. `boot()` calls `prefs.init()` **before** `appWindow(...)`, so `JSON.parse('')` throwing aborts boot right there: the raw `nui-app` shell renders with **no titlebar/statusbar and no listeners** (TTS pane dead, no file opens). Fixed 2026-09-13: `app/js/prefs.js` writes a `.tmp` sibling then renames over the target, serialized through a promise chain — the target is never opened for writing, so it cannot be truncated. Reset by deleting `%APPDATA%\nmarkdownviewer\prefs.json`.
 - 2026-09-13 incident: that 0-byte `prefs.json` broke startup exactly as above; the user's first instinct — "a destroyed config stopped initialization partway" — was correct.
+- **`appWindow()` wipes `document.body`.** With the default target it runs `document.body.innerHTML = ''`, so any static markup that is a direct child of `<body>` (e.g. a `<nui-dropzone>` overlay) is silently destroyed at boot — the element simply never exists, no error. Create such elements in JS *after* the `appWindow(...)` call; core NUI components self-upgrade on dynamic insertion. (2026-09-20, full-window drag & drop.)
+- **Drag & drop in Electron: `File.path` is gone** (removed in modern Electron). Use `webUtils.getPathForFile(file)` — exposed on the `nmdv_node` bridge in [app/index.html](app/index.html). Dropped folders arrive as `File` entries too; `fsp.stat` decides file vs. directory.
 
 ## File Association Pattern (M5, for the next major release)
 

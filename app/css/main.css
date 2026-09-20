@@ -127,6 +127,14 @@ nui-main#md-main {
 	flex: none;
 }
 
+/* The dropzone overlay must cover the WHOLE window. NUI's app shell header
+   sits at z-index 200 in the root stacking context (nui-app itself creates
+   none), so the component's own z-index 100 loses against it. Stacking
+   plumbing, not component styling. */
+#dropzone {
+	z-index: 300;
+}
+
 /* Docked TTS player (adapted from LLM-Gateway-Chat tts-player) */
 .tts-player {
 	box-sizing: border-box;

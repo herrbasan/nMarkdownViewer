@@ -29,7 +29,7 @@ const g = {
 };
 
 const el = {};
-for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-collapse', 'btn-refresh', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-model', 'cfg-model-wrap', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status', 'cfg-startup', 'btn-startup-choose', 'btn-startup-clear', 'startup-path']) {
+for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-collapse', 'btn-refresh', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-model', 'cfg-model-wrap', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status', 'cfg-startup', 'btn-startup-choose', 'btn-startup-clear', 'startup-path', 'cfg-update', 'btn-update-check', 'update-version']) {
 	el[id] = document.getElementById(id);
 }
 
@@ -56,6 +56,15 @@ async function boot() {
 	});
 	g.statusBar = g.win.element.querySelector('.nui-status-bar');
 	g.statusBar.innerHTML = '<span id="status-text"></span>';
+
+	// Full-window drop overlay. Must be created AFTER appWindow(): with the
+	// default target it wipes document.body, destroying any static markup.
+	// Core component — a dynamically inserted <nui-dropzone> self-upgrades.
+	// The zone min-height is inline because the component only respects a
+	// pre-set inline min-height when laying out its grid.
+	document.body.insertAdjacentHTML('beforeend',
+		'<nui-dropzone id="dropzone"><div data-drop="open" style="min-height: calc(100vh - 2 * var(--nui-space))">Drop a Markdown file or folder to open</div></nui-dropzone>');
+	el['dropzone'] = document.getElementById('dropzone');
 
 	// App-level sidebar toggling (data-action="toggle-sidebar[:right]") —
 	// a convention the app wires itself, not a NUI builtin (see nui-boilerplate).
@@ -84,9 +93,10 @@ async function boot() {
 	el['file-tree'].addEventListener('nui-file-select', (e) => onTreeFile(e.detail.entry));
 	el['file-tree'].addEventListener('nui-tree-error', (e) => status(`Cannot read ${e.detail.entry.path}: ${e.detail.error}`));
 
-	// Drag & drop (body-level: required for Electron file access later)
-	document.body.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
-	document.body.addEventListener('drop', onDrop);
+	// Full-window drag & drop: the nui-dropzone overlay owns the window-level
+	// drag listeners (incl. the dragover preventDefault Electron needs); we
+	// consume its drop event — detail.originalEvent is the native drop event.
+	el['dropzone'].addEventListener('nui-dropzone-drop', (e) => onDrop(e.detail.originalEvent));
 
 	window.addEventListener('beforeunload', (e) => { if (g.dirty) e.preventDefault(); });
 	window.addEventListener('keydown', (e) => {
@@ -163,7 +173,12 @@ async function bootBrowser() {
 async function bootElectron() {
 	document.body.classList.add('electron'); // hides Open File (OS provides it)
 	el['cfg-startup'].hidden = false; // startup folder is Electron-only
+	el['cfg-update'].hidden = false;  // update check is Electron-only (Squirrel)
 	g.mainEnv = await electron_helper.global.get('env');
+	el['update-version'].textContent = `v${g.mainEnv.version}`;
+	el['btn-update-check'].addEventListener('click', () => {
+		window.nmdv_node.ipcRenderer.send('check-for-updates');
+	});
 	g.npath = window.nmdv_node.path;
 	g.nfs = window.nmdv_node.fsp;
 	g.fsSync = window.nmdv_node.fs;
@@ -402,7 +417,38 @@ function selectInTree(name) {
 
 async function onDrop(e) {
 	e.preventDefault();
-	const item = [...(e.dataTransfer?.items || [])].find(i => i.kind === 'file');
+	const dt = e.dataTransfer;
+	if (!dt) return;
+
+	// Electron: resolve the native path (File.path was removed from modern
+	// Electron — webUtils.getPathForFile is the replacement). Dropped files
+	// AND folders both arrive as File entries; stat decides which we got.
+	if (window.electron_helper) {
+		const dropped = [...dt.files][0];
+		if (!dropped) return;
+		const p = window.nmdv_node.webUtils.getPathForFile(dropped);
+		if (!p) {
+			status('Drop ignored: item has no local path.');
+			return;
+		}
+		const st = await g.nfs.stat(p);
+		if (st.isDirectory()) {
+			if (!await confirmDiscard()) return;
+			await rootTree({ name: g.npath.basename(p), fs: nativeFsAdapter(), rootPath: p });
+			await openFirstMarkdown();
+			return;
+		}
+		if (!/\.(md|markdown)$/i.test(p)) {
+			status('Drop ignored: not a Markdown file.');
+			return;
+		}
+		const dir = g.npath.dirname(p);
+		await rootTree({ name: g.npath.basename(dir), fs: nativeFsAdapter(), rootPath: dir }, p);
+		return;
+	}
+
+	// Browser: File System Access handles from the dropped items.
+	const item = [...(dt.items || [])].find(i => i.kind === 'file');
 	if (!item) return;
 	const handle = item.getAsFileSystemHandle ? await item.getAsFileSystemHandle() : null;
 
@@ -420,11 +466,6 @@ async function onDrop(e) {
 		return;
 	}
 	if (!await confirmDiscard()) return;
-	if (window.electron_helper && file.path) {
-		const dir = g.npath.dirname(file.path);
-		await rootTree({ name: g.npath.basename(dir), fs: nativeFsAdapter(), rootPath: dir }, file.path);
-		return;
-	}
 	loadDocument(handle, file.name, await file.text());
 	selectInTree(file.name);
 }

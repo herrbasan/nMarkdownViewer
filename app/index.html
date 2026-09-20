@@ -21,7 +21,8 @@
 				fsp: require('node:fs/promises'),
 				path: require('node:path'),
 				url: require('node:url'),
-				ipcRenderer: require('electron').ipcRenderer
+				ipcRenderer: require('electron').ipcRenderer,
+				webUtils: require('electron').webUtils
 			};
 		}
 	</script>
@@ -135,6 +136,15 @@
 						</nui-button>
 						<nui-button variant="ghost" id="btn-startup-clear" hidden>
 							<button type="button"><nui-icon name="close"></nui-icon> Clear</button>
+						</nui-button>
+					</nui-input-group>
+				</div>
+				<div id="cfg-update" class="sidebar-section" hidden>
+					<span class="config-title">Updates</span>
+					<nui-input-group class="sidebar-section">
+						<label id="update-version"></label>
+						<nui-button variant="ghost" id="btn-update-check">
+							<button type="button"><nui-icon name="sync"></nui-icon> Check for updates</button>
 						</nui-button>
 					</nui-input-group>
 				</div>

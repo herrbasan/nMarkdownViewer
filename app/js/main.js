@@ -6,17 +6,21 @@
 
 if (require('electron-squirrel-startup')) return;
 
-const { app, Menu, screen } = require('electron');
+const { app, Menu, screen, ipcMain } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const helper = require('../modules/electron_helper/helper_new.js');
+const update = require('../modules/electron_helper/update.js');
+
+const UPDATE_REPO = 'herrbasan/nMarkdownViewer';
 
 const env = {
 	isPackaged: app.isPackaged,
 	app_path: app.getAppPath(),
 	base_path: app.getAppPath(),
 	userData: app.getPath('userData'), // renderer prefs.json location
+	version: app.getVersion(),
 	filePath: null
 };
 
@@ -117,6 +121,30 @@ async function init() {
 	}
 
 	Menu.setApplicationMenu(null);
+
+	// Auto-update (GitHub releases, SoundApp pattern): silent startup check —
+	// the splash only appears when a newer release exists. Packaged builds
+	// only: autoUpdater needs the Squirrel install to apply anything.
+	if (env.isPackaged) setTimeout(checkUpdate, 1500);
+
+	// Manual check from the config pane — always shows the update window.
+	ipcMain.on('check-for-updates', () => {
+		update.checkWithUI(UPDATE_REPO, updateProgress, { useSemVer: true });
+	});
+}
+
+async function checkUpdate() {
+	const check = await update.checkVersion(UPDATE_REPO, 'git', true);
+	if (check.status && check.isNew) {
+		console.log('main : update available: v' + check.remote_version);
+		update.init({ mode: 'splash', url: UPDATE_REPO, source: 'git', progress: updateProgress, check, useSemVer: true });
+	} else {
+		console.log('main : no update available');
+	}
+}
+
+function updateProgress(e) {
+	if (e.type === 'log') console.log('main : updater:', e.data);
 }
 
 // File association (.md/.markdown) in HKCU — per-user, no admin needed.
