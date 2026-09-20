@@ -109,13 +109,13 @@ if ($status) {
     exit 1
 }
 
-# The tag gh creates points at the remote branch head — refuse to build a
+# The tag gh creates points at the remote branch head - refuse to build a
 # release from commits that aren't pushed yet.
 git fetch origin $Branch --quiet
 $local = git rev-parse HEAD
 $remote = git rev-parse "origin/$Branch"
 if ($local -ne $remote) {
-    Write-Error "Local $Branch is not in sync with origin/$Branch. Push first — the release tag would otherwise point at code that differs from the built artifacts."
+    Write-Error "Local $Branch is not in sync with origin/$Branch. Push first - the release tag would otherwise point at code that differs from the built artifacts."
     exit 1
 }
 
