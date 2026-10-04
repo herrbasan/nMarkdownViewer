@@ -101,7 +101,7 @@ identically because there is only one answer to ask.
 | `text` | txt log json **jsonl** ndjson js ts css php py sh sql yaml … | `nui-code-editor`, read-only, full width |
 | `html` | html htm xhtml xml | **sandboxed iframe**, full content width |
 | `docx` | docx | unpacked and converted, reads like a document |
-| `pdf` | pdf | *not ours* — Electron's viewer cannot run here; the OS opens it |
+| `pdf` | pdf | rendered in-page by **pdf.js** (vendored) |
 | `unsupported` | everything else, incl. legacy `.doc` | *shown*, with an "Open in default app" button |
 | — | (no entry) | a link, which still goes to the OS handler |
 
@@ -158,15 +158,36 @@ identically because there is only one answer to ask.
   invite edits that go nowhere.
 - The highlighter knows five languages (html/xml, css, js, ts, json). Anything
   else is escaped and left plain rather than mis-coloured.
-- **PDF is the OS's job, and that is measured, not assumed.** Electron gates
-  its PDF viewer on `webPreferences.plugins`, which **defaults to false**. With
-  it enabled, Electron 41's viewer still fails to start — `sandboxed_renderer.
-  bundle.js script failed to run` / `object null is not iterable` — and
-  `<embed type="application/pdf">` paints a blank box **without firing an
-  error event**, so there is no graceful fallback to detect. iframe, `<embed>`,
-  `<object>` and `<webview>` were each measured; none paint. In-app PDF would
-  mean vendoring pdf.js (a renderer, not a plugin), which is a project-level
-  call rather than a local patch.
+- **PDF is rendered by pdf.js, and it is pinned to 4.10.38.** Chromium's own
+  viewer is gated on `webPreferences.plugins` (default **false**), and even with
+  it enabled Electron 41's viewer bundle fails to start —
+  `sandboxed_renderer.bundle.js script failed to run` / `object null is not
+  iterable` — so `<embed>`, `<iframe>`, `<object>` and `<webview>` were each
+  measured and none of them paint. pdf.js is a **renderer**, not a plugin,
+  which is the only reason it works. It is the app's one vendored third-party
+  dependency (`app/modules/pdfjs/`, Apache-2.0, ~3.6 MB, loaded on demand).
+- **Do not upgrade pdf.js to 6.x against Electron 41.** The 6 series calls
+  `Math.sumPrecise`, an ES2025 built-in V8 here does not have. The call site is
+  inside the WORKER, which has its own global scope, so a shim in the app
+  cannot reach it — the version itself has to be compatible. 4.x uses the
+  older `render({ canvasContext, viewport })`; the `canvas` key is 5.x+ and
+  sends 4.x down a Node-only path ("canvas is not defined").
+- **A PDF is read as bytes, never as a URL.** `fetch()` over `raum://` is
+  CORS-blocked from a `file://` origin, so handing pdf.js a URL fails for a
+  reason that looks like a corrupt file.
+- **The viewer needs the scroller to exist before it measures fit-width.**
+  Page boxes are created first, then the scale is computed: measuring a scroller
+  that has no children yet produced a 222% "fit" on an A5 page. (222% is
+  correct once the boxes exist — the page is 397x595pt, not A4.)
+- **A pdf.js view must be pointed at its own host, never at the page.** The
+  view REWRITES its host's contents; handing it `el.page` wipes the page and
+  leaves no `#viewer` for the next `renderView()` to remove, so the PDF chrome
+  survives into the following document. It looked correct and was not.
+- **The text layer is not decoration.** Each page is a canvas with a
+  transparent positioned text layer over it; without it the page is a picture —
+  nothing selectable, searchable or copyable. The page box is set explicitly on
+  mount, because deriving it from page geometry once reported page 42 of 84 on
+  a freshly opened document.
 - **The OS handoff takes any file, not just `.md`.** `fileArgFrom(argv)` picks
   the first argument that is an absolute path to an existing *file*; matching
   a `.md` extension instead would drop every image and video the user

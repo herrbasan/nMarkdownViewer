@@ -15,6 +15,7 @@ import { TtsPlayerHost } from './lib/tts-player.js';
 import { kindOf, langOf, isDisplayable, isTextual, NUI_LANGS } from './file-types.js';
 import { highlightCode } from './highlight.js';
 import { docxToFragment } from './docx.js';
+import { PdfView } from './pdf-view.js';
 
 const g = {
 	config: null,
@@ -438,10 +439,14 @@ async function openDocumentAt(path) {
 		return true;
 	}
 
-	// A .docx is unpacked and converted. It is not text, so it is never read
-	// with getFile().text(). A PDF is not ours at all — Electron's viewer
-	// cannot render it here (see file-types.js), so it falls through to the
-	// unsupported view and the OS.
+	// A .docx is unpacked and converted. A PDF is rendered by pdf.js. Neither is
+	// text, so neither is read with getFile().text(). A PDF is read as BYTES:
+	// fetch() over raum:// is CORS-blocked from a file:// origin, so handing
+	// pdf.js a URL would fail for a reason that looks like a corrupt file.
+	if (kind === 'pdf') {
+		loadPdf(handle, name, path);
+		return true;
+	}
 	if (kind === 'docx') {
 		loadDocx(handle, name, path);
 		return true;
@@ -642,6 +647,28 @@ async function loadDocx(handle, name, path) {
 		g.docFragment = docxToFragment(bytes, window.nmdv_node.zlib);
 		if (g.fileName !== name) return;              // the user moved on
 		renderView();
+	} catch (err) {
+		status(`Cannot read ${name}: ${err.message}`);
+	}
+}
+
+// A .pdf is drawn by pdf.js, off the critical path: the pane shows the name
+// and the document swaps in once the bytes are read and parsed.
+async function loadPdf(handle, name, path) {
+	loadAsset(handle, name, 'pdf', null);
+	try {
+		const buf = await g.nfs.readFile(path);
+		if (g.fileName !== name) return;              // the user moved on
+		// Replace the placeholder the load created, then hand the host THAT
+		// element. PdfView rewrites its host's contents, so pointing it at
+		// el.page would wipe the page and leave nothing for the next
+		// renderView() to find.
+		document.getElementById('viewer')?.remove();
+		const host = document.createElement('div');
+		host.id = 'viewer';
+		host.className = 'asset asset-pdf';
+		el.page.appendChild(host);
+		await new PdfView(host, new Uint8Array(buf), name).mount();
 	} catch (err) {
 		status(`Cannot read ${name}: ${err.message}`);
 	}
@@ -891,7 +918,7 @@ function renderAsset() {
 	// A picture or a video is not prose: the reading measure would letterbox
 	// it into a strip. `breakout` is the theme's own way to let a child of
 	// nui-page span the full container while keeping the text-flow gutter.
-	if (g.docKind === 'image' || g.docKind === 'video' || g.docKind === 'text') {
+	if (g.docKind === 'image' || g.docKind === 'video' || g.docKind === 'text' || g.docKind === 'pdf') {
 		wrap.setAttribute('breakout', '');
 	}
 
