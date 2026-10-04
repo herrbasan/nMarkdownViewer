@@ -31,11 +31,33 @@ export class PdfView {
 		this.doc = null;
 		this.scale = 1;
 		this.fitMode = 'width';
-		this.pages = [];        // { page, canvas, wrap, textLayer, rendered }
-		this.token = 0;        // guards async work against a document change
+		this.pages = [];        // { page, canvas, wrap, textLayer, rendered, task, render }
+		this.token = 0;         // guards async work against a document change
+		this.wantScale = null;  // latest zoom intent, while a re-render runs
+		this.scaling = null;    // the in-flight coalescing loop
+	}
+
+	// A view that outlives its document keeps rendering into a detached
+	// host — and two live views racing on the same canvas is exactly the
+	// "multiple render() operations" throw. Every observer is stopped here.
+	destroy() {
+		this.token++;
+		this.wantScale = null;
+		this.scaling = null;
+		this.io?.disconnect();
+		this.ro?.disconnect();
+		for (const p of this.pages) {
+			p.render?.cancel?.();
+			p.task = null;
+		}
+		this.pages = [];
+		this.doc?.destroy?.();
+		this.doc = null;
+		this.destroyed = true;
 	}
 
 	async mount() {
+		if (this.destroyed) return;
 		this.buildChrome();
 		this.doc = await pdfjs.getDocument({
 			data: this.bytes,
@@ -175,29 +197,48 @@ export class PdfView {
 		await Promise.all(this.pages.map(p => this.ensurePage(p)));
 		if (token !== this.token) return;
 	}
-
 	async ensurePage(entry) {
-		if (entry.rendered || !this.doc) return;
-		const page = await this.doc.getPage(entry.n);
-		const viewport = page.getViewport({ scale: this.scale });
-		const dpr = window.devicePixelRatio || 1;
+		if (!this.doc) return;
+		// A render already in flight for this page is THE render to await.
+		// pdf.js refuses two concurrent render() calls on one canvas, and
+		// "rendered" is only set once the promise resolves — so without this
+		// two callers (the observer and a re-render) both start, and the
+		// second throws "Cannot use the same canvas during multiple
+		// render() operations".
+		if (entry.task) return entry.task;
+		if (entry.rendered) return;
 
-		entry.canvas.width = Math.floor(viewport.width * dpr);
-		entry.canvas.height = Math.floor(viewport.height * dpr);
-		entry.canvas.style.width = Math.floor(viewport.width) + 'px';
-		entry.canvas.style.height = Math.floor(viewport.height) + 'px';
-		entry.wrap.style.height = Math.floor(viewport.height) + 8 + 'px';
+		const token = this.token;
+		entry.task = (async () => {
+			const page = await this.doc.getPage(entry.n);
+			if (token !== this.token) return;
+			const viewport = page.getViewport({ scale: this.scale });
+			const dpr = window.devicePixelRatio || 1;
 
-		const ctx = entry.canvas.getContext('2d', { alpha: false });
-		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-		ctx.fillStyle = '#fff';
-		ctx.fillRect(0, 0, viewport.width, viewport.height);
-		// 4.x takes canvasContext; the `canvas` key is a 5.x parameter and
-		// sends 4.x down a Node-only path ("canvas is not defined").
-		await page.render({ canvasContext: ctx, viewport }).promise;
-		entry.rendered = true;
-		entry.page = page;
-		await this.paintText(entry, page, viewport);
+			entry.canvas.width = Math.floor(viewport.width * dpr);
+			entry.canvas.height = Math.floor(viewport.height * dpr);
+			entry.canvas.style.width = Math.floor(viewport.width) + 'px';
+			entry.canvas.style.height = Math.floor(viewport.height) + 'px';
+			entry.wrap.style.height = Math.floor(viewport.height) + 8 + 'px';
+
+			const ctx = entry.canvas.getContext('2d', { alpha: false });
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+			ctx.fillStyle = '#fff';
+			ctx.fillRect(0, 0, viewport.width, viewport.height);
+			// 4.x takes canvasContext; the `canvas` key is a 5.x parameter and
+			// sends 4.x down a Node-only path ("canvas is not defined").
+			// The RenderTask is kept so a re-render can CANCEL it — cancelling
+			// is asynchronous, and starting the next render before the last
+			// has actually stopped is the "same canvas during multiple
+			// render() operations" throw.
+			entry.render = page.render({ canvasContext: ctx, viewport });
+			await entry.render.promise;
+			entry.rendered = true;
+			entry.page = page;
+			await this.paintText(entry, page, viewport);
+		})().finally(() => { entry.task = null; entry.render = null; });
+
+		return entry.task;
 	}
 
 	// A transparent text layer over the canvas. Without it the page is a
@@ -240,7 +281,10 @@ export class PdfView {
 			for (const e of entries) {
 				if (!e.isIntersecting) continue;
 				const entry = this.pages.find(p => p.wrap === e.target);
-				if (entry && !entry.rendered) this.ensurePage(entry);
+				// Swallow a render failure here: this observer is not a place
+				// to report one, and an escaping rejection surfaces as an
+				// unhandled promise in the console with no document context.
+				if (entry && !entry.rendered) this.ensurePage(entry).catch(() => {});
 			}
 		}, { root: this.scroller, rootMargin: '400px 0px' });
 		for (const p of this.pages) this.io.observe(p.wrap);
@@ -273,17 +317,41 @@ export class PdfView {
 	}
 
 	// A canvas is rasterised at a fixed size, so every scale change is a full
-	// re-render. That is why this is not just an assignment.
+	// re-render — and a burst of zoom clicks arrives far faster than 84 pages
+	// can re-render. So: the latest intent WINS. A re-render in flight is left
+	// to finish, then the final scale is applied once. Queueing every
+	// intermediate step would replay the whole burst and still land in the
+	// right place, just seconds later.
 	async applyScale(scale, mode) {
 		this.setScale(scale, mode);
 		if (!this.pages.length) return;      // pre-layout; mount() renders
-		await this.reRender();
+		this.wantScale = scale;
+		if (this.scaling) return this.scaling;
+
+		this.scaling = (async () => {
+			while (this.wantScale !== null && !this.destroyed) {
+				this.wantScale = null;
+				await this.reRender();
+			}
+		})().finally(() => { this.scaling = null; });
+
+		return this.scaling;
 	}
 
 	// Re-render at the new scale. pdf.js cannot rescale a finished canvas.
+	// Every in-flight render is cancelled AND awaited before a new one
+	// starts: cancel() is asynchronous, so merely calling it leaves the old
+	// render holding the canvas for another frame or two.
 	async reRender() {
-		for (const p of this.pages) p.rendered = false;
+		const pending = this.pages.filter(p => p.task).map(p => p.task.catch(() => {}));
+		for (const p of this.pages) {
+			p.render?.cancel?.();
+			p.task = null;
+			p.render = null;
+			p.rendered = false;
+		}
+		await Promise.allSettled(pending);
+		if (this.destroyed) return;
 		await this.renderAll();
 		this.observe();
-		this.onScroll();
 	}}

@@ -28,6 +28,7 @@ const g = {
 	docKind: 'markdown',  // what the viewer is showing — see file-types.js
 	assetUrl: null,       // URL for a non-textual document
 	docFragment: null,    // converted .docx nodes
+	pdfView: null,        // live pdf.js view, so it can be torn down
 	markdown: '',
 	frontmatterRaw: null, // fenced YAML block preserved across edit round-trips
 	dirty: false,
@@ -570,6 +571,11 @@ async function confirmDiscard() {
 function loadDocument(handle, name, text, kind = 'markdown') {
 	g.tts?.stop();
 	releaseAssetUrls();
+	// Any live pdf.js view goes BEFORE the host is replaced: its observers
+	// would otherwise keep rendering into a detached element, and a second
+	// view racing it throws "same canvas during multiple render operations".
+	g.pdfView?.destroy();
+	g.pdfView = null;
 	g.fileHandle = handle;
 	g.fileName = name;
 	g.docKind = kind;
@@ -594,6 +600,8 @@ function loadDocument(handle, name, text, kind = 'markdown') {
 function loadAsset(handle, name, kind, url) {
 	g.tts?.stop();
 	releaseAssetUrls();
+	g.pdfView?.destroy();
+	g.pdfView = null;
 	g.fileHandle = handle;
 	g.fileName = name;
 	g.docKind = kind;
@@ -619,6 +627,8 @@ function loadAsset(handle, name, kind, url) {
 function loadUnsupported(handle, name, path) {
 	g.tts?.stop();
 	releaseAssetUrls();
+	g.pdfView?.destroy();
+	g.pdfView = null;
 	g.fileHandle = handle;
 	g.fileName = name;
 	g.docKind = 'unsupported';
@@ -672,7 +682,8 @@ async function loadPdf(handle, name, path) {
 		// normally sets this, and pdf bypasses that path entirely.
 		host.setAttribute('breakout', '');
 		el.page.appendChild(host);
-		await new PdfView(host, new Uint8Array(buf), name).mount();
+		g.pdfView = new PdfView(host, new Uint8Array(buf), name);
+		await g.pdfView.mount();
 	} catch (err) {
 		status(`Cannot read ${name}: ${err.message}`);
 	}
