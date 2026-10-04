@@ -667,6 +667,10 @@ async function loadPdf(handle, name, path) {
 		const host = document.createElement('div');
 		host.id = 'viewer';
 		host.className = 'asset asset-pdf';
+		// breakout spans the full content width; without it the reading
+		// measure letterboxes the viewer into a 992px column. renderAsset
+		// normally sets this, and pdf bypasses that path entirely.
+		host.setAttribute('breakout', '');
 		el.page.appendChild(host);
 		await new PdfView(host, new Uint8Array(buf), name).mount();
 	} catch (err) {

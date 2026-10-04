@@ -170,38 +170,94 @@ html, body {
    a canvas with a transparent text layer over it — without that layer the page
    is a picture: nothing selectable, nothing searchable. */
 
+/* The PDF takes the WHOLE content area — toolbar flush to the top, pages to
+   the edges. Height is a plain 100% because nui-page is given a real height
+   below; the old 100vh arithmetic was a guess at the pane that left a gap and
+   broke the moment the chrome's height changed. */
 .asset-pdf {
 	flex-direction: column;
-	height: calc(100vh - var(--nui-app-titlebar-height) - var(--nui-app-statusbar-height) - 4 * var(--nui-space));
+	height: 100%;
 	align-items: stretch;
+	/* breakout keeps the text-flow gutter, which a page canvas has no use
+	   for — this is our own element, so the padding is ours to drop. */
+	padding: 0;
+	overflow: hidden;
+}
+
+/* The PDF owns its own scrolling, so the app's page scroller must stand
+   still — otherwise 84 pages push the toolbar off the top with them. nui-page
+   is auto-height for Markdown on purpose (a document grows); it only takes the
+   pane's height when it is holding a self-scrolling view. */
+nui-main > nui-page:has(> .asset-pdf) {
+	height: 100%;
+	overflow: hidden;
 }
 
 .pdf-view {
 	display: flex;
 	flex-direction: column;
-	height: 100%;
+	/* NO height here: this class lands on the SAME element as .asset-pdf, and
+	   `height: 100%` against an auto-height parent resolves to auto — which
+	   grew the box to hold all 84 pages and handed scrolling back to the page.
+	   .asset-pdf owns the height. */
 	min-height: 0;
 }
 
 .pdf-bar {
 	display: flex;
 	align-items: center;
-	gap: var(--nui-space-quarter);
+	gap: var(--nui-space-double);
 	padding: var(--nui-space-half) var(--nui-space);
 	flex: none;
 	border-bottom: var(--border-thickness) solid var(--border-shade1-4);
+	background: var(--color-base);
 }
 
-.pdf-page,
-.pdf-zoom {
+/* A toolbar is three groups, not a row of loose buttons: page nav, zoom, and
+   the fit toggle pushed to the far end. */
+.pdf-group {
+	display: flex;
+	align-items: center;
+	gap: var(--nui-space-quarter);
+}
+
+.pdf-far {
+	margin-left: auto;
+}
+
+/* The page field: a real input in its own NUI wrapper, sized to a couple of
+   digits so "/ 84" stays on the same line instead of wrapping below. */
+.pdf-count {
+	display: flex;
+	align-items: center;
+	gap: var(--nui-space-quarter);
 	font-size: var(--font-size-small);
 	color: var(--text-color-dim);
 	white-space: nowrap;
 }
 
-.pdf-page input {
-	width: 3.5rem;
-	text-align: right;
+.pdf-count nui-input {
+	width: 4.2rem;
+}
+
+.pdf-count input {
+	text-align: center;
+	font-size: var(--font-size-small);
+	padding: 0;
+}
+
+.pdf-zoom {
+	min-width: 3.4rem;
+	text-align: center;
+	font-size: var(--font-size-small);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-color-dim);
+	cursor: pointer;
+	user-select: none;
+}
+
+.pdf-zoom:hover {
+	color: var(--text-color);
 }
 
 .pdf-scroll {

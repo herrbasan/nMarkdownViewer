@@ -62,6 +62,28 @@ export class PdfView {
 		// a freshly opened document.
 		this.current = 1;
 		this.pageInput.value = '1';
+		this.watchResize();
+	}
+
+	// A viewer that does not refit when its pane changes is wrong twice over:
+	// the first measurement lands before layout settles, and resizing the
+	// window would leave the page stranded at the old scale. Only a manual
+	// zoom is left alone — that one the user chose.
+	watchResize() {
+		let frame = 0;
+		this.ro?.disconnect();
+		this.ro = new ResizeObserver(() => {
+			if (this.fitMode === 'manual') return;
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(async () => {
+				if (!this.pages.length || !this.doc) return;
+				const fit = this.fitScale();
+				// Ignore sub-pixel churn; only a real change re-renders.
+				if (Math.abs(fit - this.scale) < 0.005) return;
+				await this.applyScale(fit, this.fitMode);
+			});
+		});
+		this.ro.observe(this.scroller);
 	}
 
 	// The scroll container, minus the chrome, is what a page must fit into.
@@ -74,23 +96,37 @@ export class PdfView {
 
 	buildChrome() {
 		this.host.classList.add('pdf-view');
+		// Three groups: navigation, zoom, and the fit toggle pushed right.
+		// Everything is a borderless icon button except Fit — a toolbar of
+		// filled primary buttons shouts louder than the document it sits over.
 		this.host.innerHTML = `
 			<div class="pdf-bar">
-				<nui-button><button type="button" data-pdf="prev" aria-label="Previous page">‹</button></nui-button>
-				<span class="pdf-page"><input type="text" size="3" readonly> / <span data-pdf="of">–</span></span>
-				<nui-button><button type="button" data-pdf="next" aria-label="Next page">›</button></nui-button>
-				<nui-button><button type="button" data-pdf="zoom-out" aria-label="Zoom out">−</button></nui-button>
-				<span class="pdf-zoom" data-pdf="zoom">100%</span>
-				<nui-button><button type="button" data-pdf="zoom-in" aria-label="Zoom in">+</button></nui-button>
-				<nui-button><button type="button" data-pdf="fit" aria-label="Fit">Fit</button></nui-button>
+				<div class="pdf-group">
+					<nui-button variant="icon"><button type="button" data-pdf="prev" aria-label="Previous page" title="Previous page">‹</button></nui-button>
+					<span class="pdf-count">
+						<nui-input><input type="text" inputmode="numeric" aria-label="Page number"></nui-input>
+						<span class="pdf-of" data-pdf="of">–</span>
+					</span>
+					<nui-button variant="icon"><button type="button" data-pdf="next" aria-label="Next page" title="Next page">›</button></nui-button>
+				</div>
+				<div class="pdf-group">
+					<nui-button variant="icon"><button type="button" data-pdf="zoom-out" aria-label="Zoom out" title="Zoom out">−</button></nui-button>
+					<span class="pdf-zoom" data-pdf="zoom" title="Reset to 100%">100%</span>
+					<nui-button variant="icon"><button type="button" data-pdf="zoom-in" aria-label="Zoom in" title="Zoom in">+</button></nui-button>
+				</div>
+				<div class="pdf-group pdf-far">
+					<nui-button variant="ghost"><button type="button" data-pdf="fit" aria-label="Toggle fit"></button></nui-button>
+				</div>
 			</div>
 			<div class="pdf-scroll" data-pdf="scroll"></div>`;
 		this.scroller = this.host.querySelector('[data-pdf="scroll"]');
 		this.bar = this.host.querySelector('.pdf-bar');
 		this.of = this.host.querySelector('[data-pdf="of"]');
-		this.pageInput = this.host.querySelector('.pdf-page input');
+		this.pageInput = this.host.querySelector('.pdf-count input');
 		this.zoomLabel = this.host.querySelector('[data-pdf="zoom"]');
+		this.fitLabel = this.host.querySelector('[data-pdf="fit"]');
 		this.of.textContent = this.doc ? this.doc.numPages : '–';
+		this.setFitLabel();
 
 		this.host.addEventListener('click', async (e) => {
 			const act = e.target.closest('[data-pdf]')?.dataset.pdf;
@@ -104,8 +140,14 @@ export class PdfView {
 				await this.applyScale(this.fitScale(), this.fitMode);
 			}
 		});
+		this.zoomLabel.addEventListener('click', () => this.applyScale(1, 'manual'));
 		this.pageInput.addEventListener('change', () => this.goToPage(parseInt(this.pageInput.value, 10) || 1));
-		this.scroller.addEventListener('scroll', () => this.onScroll());
+		this.pageInput.addEventListener('focus', () => this.pageInput.select());
+		this.scroller.addEventListener('scroll', () => this.onScroll(), { passive: true });
+	}
+
+	setFitLabel() {
+		this.fitLabel.textContent = this.fitMode === 'page' ? 'Fit page' : 'Fit width';
 	}
 
 	// One box per page, sized but not yet drawn. The IntersectionObserver
@@ -188,6 +230,7 @@ export class PdfView {
 		this.scale = Math.min(Math.max(scale, 0.1), 8);
 		this.fitMode = mode;
 		this.zoomLabel.textContent = Math.round(this.scale * 100) + '%';
+		this.setFitLabel();
 	}
 	// Only the pages in view are drawn; the rest get a blank box until they
 	// scroll near, which keeps a 400-page document at a few MB of memory.
