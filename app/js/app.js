@@ -55,7 +55,9 @@ async function boot() {
 		onClose: () => { window.electron_helper ? electron_helper.app.exit() : location.reload(); }
 	});
 	g.statusBar = g.win.element.querySelector('.nui-status-bar');
-	g.statusBar.innerHTML = '<span id="status-text"></span>';
+	// Two slots: the message (left) and the hovered link's destination (right),
+	// as a browser's status bar does. A flex row, so the URL takes the slack.
+	g.statusBar.innerHTML = '<span id="status-text"></span><span id="hover-url" hidden></span>';
 
 	// Full-window drop overlay. Must be created AFTER appWindow(): with the
 	// default target it wipes document.body, destroying any static markup.
@@ -93,6 +95,16 @@ async function boot() {
 	el['file-tree'].addEventListener('nui-file-select', (e) => onTreeFile(e.detail.entry));
 	el['file-tree'].addEventListener('nui-tree-error', (e) => status(`Cannot read ${e.detail.entry.path}: ${e.detail.error}`));
 
+	// Link routing. Bound on el.page: one delegated pair survives every
+	// document re-render into the viewer. Wired in BOTH shells — an
+	// unrouted anchor navigates the window to the href, which in the browser
+	// means the app is simply gone.
+	el.page.addEventListener('click', onLinkClick);
+	el.page.addEventListener('pointerover', onLinkHover);
+	el.page.addEventListener('pointerout', clearHoverUrl);
+	el.page.addEventListener('focusin', onLinkHover);
+	el.page.addEventListener('focusout', clearHoverUrl);
+
 	// Full-window drag & drop: the nui-dropzone overlay owns the window-level
 	// drag listeners (incl. the dragover preventDefault Electron needs); we
 	// consume its drop event — detail.originalEvent is the native drop event.
@@ -122,10 +134,14 @@ async function boot() {
 	g.playerHost.attach();
 
 	// OS-opened file (double-click / CLI arg): root the tree at its folder, open it
-	if (g.mainEnv?.filePath) {
+	// A linked document arrives as ?file= (main.js); it wins over the single-instance
+	// global, which still names the FIRST window's document.
+	const linked = new URLSearchParams(location.search).get('file');
+	if (linked || g.mainEnv?.filePath) {
+		const fp = linked || g.mainEnv.filePath;
 		await rootTree(
-			{ name: g.npath.basename(g.npath.dirname(g.mainEnv.filePath)), fs: nativeFsAdapter(), rootPath: g.npath.dirname(g.mainEnv.filePath) },
-			g.mainEnv.filePath
+			{ name: g.npath.basename(g.npath.dirname(fp)), fs: nativeFsAdapter(), rootPath: g.npath.dirname(fp) },
+			fp
 		);
 	} else if (g.mainEnv) {
 		// No file attached: fall back to the persisted startup folder (if any).
@@ -557,6 +573,127 @@ function resolveImageUri(url) {
 		return `raum:///${target.replace(/\\/g, '/')}${extra}`;
 	}
 	return url;
+}
+
+// ################################# LINKS
+//
+// Three destinations, decided by the href alone:
+//   web (http/https/mailto) → the OS browser, never an Electron window
+//   local .md/.markdown     → a new nMarkdownViewer window
+//   local anything else     → the OS handler for that file type
+// A bare #fragment stays in-document. nui-markdown emits anchors with no
+// target, so nothing is intercepted before this — the stage is the only
+// routing point, and main.js guards the navigation it can't catch.
+
+const MD_RE = /\.(md|markdown)$/i;
+
+function currentDocDir() {
+	const docPath = g.fileHandle?._nmdvPath;
+	if (docPath) return g.npath.dirname(docPath);
+	return g.rootPath || null;
+}
+
+// Resolve a document-relative href to an absolute path. Reuses the image
+// resolver's rules (absolute passthrough, rootPath fallback) so a link and
+// an image pointing at the same place cannot disagree.
+function resolveDocHref(href) {
+	const [clean, ...rest] = href.split(/([?#].*)/);
+	const extra = rest.join('');
+	if (!clean) return null;
+	if (!window.electron_helper || !g.npath) return null;
+
+	const docDir = currentDocDir();
+	if (!docDir) return null;
+
+	let target;
+	if (/^[a-zA-Z]:[\\/]/.test(clean) || clean.startsWith('\\\\')) {
+		target = g.npath.normalize(clean);
+	} else {
+		target = g.npath.resolve(docDir, clean);
+		if (g.fsSync && g.rootPath && docDir !== g.rootPath && !g.fsSync.existsSync(target)) {
+			const fromRoot = g.npath.resolve(g.rootPath, clean);
+			if (g.fsSync.existsSync(fromRoot)) target = fromRoot;
+		}
+	}
+	return { path: target, extra };
+}
+
+// True for hrefs the OS browser owns. mailto included: it is a web scheme to
+// the shell, and passing it to openExternal is the documented route.
+function isWebHref(href) {
+	return /^(https?|mailto):/i.test(href);
+}
+
+async function onLinkClick(e) {
+	// Middle/ctrl/shift-click are the browser's "open elsewhere" gestures;
+	// honouring them here would need a menu, so leave them to the guard in
+	// main.js, which opens web URLs externally and refuses the rest.
+	if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+	const a = e.target.closest?.('a[href]');
+	if (!a || !el.page.contains(a)) return;
+
+	const href = a.getAttribute('href');
+	// Same-document fragment: the browser's own job, and the only case where
+	// a hash may legitimately appear on a non-web href.
+	if (!href || href.startsWith('#')) return;
+
+	e.preventDefault();
+
+	// The OS is a boundary: it can lack a handler for a file type, or refuse
+	// a URL. A rejected invoke is reported, never swallowed.
+	try {
+		if (isWebHref(href)) {
+			// The browser shell has no OS browser to hand off to; a new tab is
+			// the same destination from where the user is standing.
+			if (window.electron_helper) await window.nmdv_node.ipcRenderer.invoke('open-external', href);
+			else window.open(href, '_blank', 'noopener');
+			return;
+		}
+
+		const resolved = resolveDocHref(href);
+		if (!resolved) {
+			// No path in this window (browser File System Access handles have
+			// none). Said plainly rather than silently swallowing the click.
+			status(`Cannot open ${href} — no file path here. Use the desktop app for local links.`);
+			return;
+		}
+		const target = resolved.path + resolved.extra;
+
+		if (MD_RE.test(resolved.path)) {
+			await window.nmdv_node.ipcRenderer.invoke('open-md-window', resolved.path);
+			return;
+		}
+		await window.nmdv_node.ipcRenderer.invoke('open-local', target);
+	} catch (err) {
+		status(`Cannot open ${href}: ${err.message}`);
+	}
+}
+
+// Browser-like: the status bar shows the destination while the pointer is on
+// a link, and the previous message returns when it leaves. Bound on the
+// viewer container, so it covers the markdown re-render on every document.
+function onLinkHover(e) {
+	const a = e.target.closest?.('a[href]');
+	if (!a || !el.page.contains(a)) { clearHoverUrl(); return; }
+	const href = a.getAttribute('href');
+	const resolved = (!isWebHref(href) && !href.startsWith('#')) ? resolveDocHref(href) : null;
+	showHoverUrl(resolved ? resolved.path + resolved.extra : href);
+}
+
+function showHoverUrl(url) {
+	const bar = g.statusBar?.querySelector('#hover-url');
+	if (!bar) return;
+	bar.textContent = url;
+	bar.hidden = false;
+	g.statusBar.classList.add('showing-url');
+}
+
+function clearHoverUrl() {
+	const bar = g.statusBar?.querySelector('#hover-url');
+	if (!bar || bar.hidden) return;
+	bar.hidden = true;
+	bar.textContent = '';
+	g.statusBar.classList.remove('showing-url');
 }
 
 function setMode(mode) {

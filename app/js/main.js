@@ -6,10 +6,11 @@
 
 if (require('electron-squirrel-startup')) return;
 
-const { app, Menu, screen, ipcMain } = require('electron');
+const { app, Menu, screen, ipcMain, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
+const { pathToFileURL } = require('node:url');
 const helper = require('../modules/electron_helper/helper_new.js');
 const update = require('../modules/electron_helper/update.js');
 
@@ -88,6 +89,61 @@ function trackWindowState(win) {
 	});
 }
 
+// A renderer must never navigate its own window away from app/index.html: an
+// anchor the stage did not intercept (ctrl+click, middle-click, raw HTML
+// inside a document) would otherwise replace the app with a web page and
+// leave a frame with no way back. Web URLs are handed to the OS browser
+// instead — the same destination a plain left-click resolves to.
+function installNavigationGuards(win) {
+	win.webContents.on('will-navigate', (event, url) => {
+		event.preventDefault();
+		if (/^(https?|mailto):/i.test(url)) shell.openExternal(url);
+	});
+	win.webContents.setWindowOpenHandler(({ url }) => {
+		if (/^(https?|mailto):/i.test(url)) shell.openExternal(url);
+		return { action: 'deny' };
+	});
+}
+
+ipcMain.handle('open-external', async (e, url) => {
+	if (!/^(https?|mailto):/i.test(url)) throw new Error(`Refusing to hand a non-web URL to the OS: ${url}`);
+	await shell.openExternal(url);
+});
+
+ipcMain.handle('open-local', async (e, filePath) => {
+	// openPath reports failure by RESOLVING to an error string, not by
+	// rejecting — an unhandled file type would otherwise look like success.
+	const err = await shell.openPath(filePath);
+	if (err) throw new Error(err);
+});
+
+ipcMain.handle('open-md-window', async (e, filePath) => {
+	const abs = path.resolve(filePath);
+	if (!/\.(md|markdown)$/i.test(abs)) throw new Error(`Not a Markdown file: ${abs}`);
+	if (!fs.existsSync(abs)) throw new Error(`File not found: ${abs}`);
+
+	// The document travels in the query string. The helper's browserWindow()
+	// loads through loadFile(), which cannot carry one, and env is a
+	// process-global — a second window reading it would get the FIRST window's
+	// document, not the one that was linked.
+	const target = new URL(pathToFileURL(path.join(__dirname, '..', 'index.html')).href);
+	target.searchParams.set('file', abs);
+
+	const b = mainWin && !mainWin.isDestroyed() ? mainWin.getBounds() : null;
+	const win = await helper.tools.browserWindow('frameless', {
+		webPreferences: { preload: path.join(__dirname, '../modules/electron_helper/helper_new.js') },
+		devTools: !env.isPackaged,
+		width: b ? b.width : 1100,
+		height: b ? b.height : 800,
+		...(b ? { x: b.x + 32, y: b.y + 32 } : {}),
+		url: target.href
+	});
+	installNavigationGuards(win);
+	// Deliberately NOT trackWindowState: one window-state.json belongs to the
+	// main window, and a second writer would fight it on every move.
+	return true;
+});
+
 async function init() {
 	// File opened via OS (double-click / drag onto icon / CLI arg)
 	const fileArg = process.argv.find(a => /\.(md|markdown)$/i.test(a) && fs.existsSync(a));
@@ -113,6 +169,7 @@ async function init() {
 		...(typeof state?.x === 'number' ? { x: state.x, y: state.y } : {}),
 		file: 'app/index.html'
 	});
+	installNavigationGuards(mainWin);
 	trackWindowState(mainWin);
 
 	// Renderer console → terminal (dev visibility)

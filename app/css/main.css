@@ -6,6 +6,29 @@ html, body {
 	overflow: hidden;
 }
 
+/* Status bar children (ours — the .nui-status-bar flex row is NUI's).
+   The message takes what it needs; the hovered link's destination claims the
+   remaining slack, dimmed, and truncates from the left so the filename — the
+   informative end of a path — always survives a long URL. */
+#status-text {
+	white-space: nowrap;
+	flex: 0 1 auto;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+#hover-url {
+	margin-left: auto;
+	padding-left: var(--nui-space-double);
+	color: var(--text-color-dim);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	direction: rtl;          /* keep the tail visible when it overflows */
+	text-align: left;
+	min-width: 0;
+}
+
 #doc-title {
 	font-weight: 600;
 	overflow: hidden;

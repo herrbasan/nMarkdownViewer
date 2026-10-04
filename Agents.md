@@ -85,6 +85,39 @@ pushed `master`; refuses if the tag exists).
   files, revisit before ever rendering untrusted content.
 - **nSpeech port/CORS** — see Open Questions in the spec.
 
+## Link Handling
+
+`nui-markdown` emits bare `<a href>` (no `target`), so `app.js` is the only
+routing point. One delegated `click`/`pointerover` pair on `#page` survives
+every document re-render into the viewer.
+
+| href | destination |
+|------|-------------|
+| `http`/`https`/`mailto` | `shell.openExternal` — the **system** browser |
+| relative or absolute `.md`/`.markdown` | a **new** nMarkdownViewer window |
+| any other local file | `shell.openPath` (OS handler for that type) |
+| `#fragment` | left to the browser (in-document) |
+
+- **The OS is a boundary.** `shell.openPath` signals failure by *resolving* to
+  an error string, so `open-local` throws on it; the stage catches and reports
+  in the status bar. Never let a rejected invoke vanish.
+- **The linked document travels in `?file=`.** `env` is a process-global, so a
+  second window reading `env.filePath` would get the *first* window's document.
+  The helper's `browserWindow()` loads via `loadFile()`, which cannot carry a
+  query — hence `loadURL` with a `pathToFileURL` href.
+- **New windows do not call `trackWindowState`** — one `window-state.json`
+  belongs to the main window; a second writer fights it on every move.
+- **`installNavigationGuards` (main.js) is the backstop.** Anything the stage
+  misses (ctrl/middle-click, raw HTML in a document) would otherwise navigate
+  the window off `app/index.html` and leave a frame with no way back. Web URLs
+  are handed to the OS browser; everything else is refused.
+- Browser shell: web links open a tab (`window.open`); local links report that
+  no path is available — File System Access handles carry no path. Wiring the
+  listeners unconditionally is deliberate: an unrouted anchor navigates the
+  window to the href, which in the browser means the app is simply gone.
+- Status bar shows the hovered destination in a second slot (`#hover-url`),
+  resolved to an absolute path so it matches what the click will do.
+
 ## Debugging Gotchas (learned the hard way)
 
 - **`SyntaxError: Unexpected token ','` (bare, no stack) = a *parse* error in a JS file, NOT an Electron/preload/contextIsolation issue.** Don't blame the shell or the `electron_helper` submodule. Find the offending file:line.
