@@ -107,6 +107,14 @@ every document re-render into the viewer.
   query — hence `loadURL` with a `pathToFileURL` href.
 - **New windows do not call `trackWindowState`** — one `window-state.json`
   belongs to the main window; a second writer fights it on every move.
+- **The close button closes a window, it does not quit the app.** It used to
+  call `electron_helper.app.exit()`, which is only equivalent when one window
+  exists; with linked documents open it took every window down with it. The
+  quit is Electron's business — it ends the process when the last window goes.
+- **`mainWin` is not "the window".** Linked windows outlive it, so the OS
+  file-handoff resolves its target through `liveWindow()` and `mainWin` is
+  nulled on `closed` — a destroyed BrowserWindow throws when asked for its
+  state.
 - **`installNavigationGuards` (main.js) is the backstop.** Anything the stage
   misses (ctrl/middle-click, raw HTML in a document) would otherwise navigate
   the window off `app/index.html` and leave a frame with no way back. Web URLs

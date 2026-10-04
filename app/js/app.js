@@ -52,7 +52,10 @@ async function boot() {
 		icon: 'article',
 		inner: document.getElementById('shell'),
 		statusbar: true,
-		onClose: () => { window.electron_helper ? electron_helper.app.exit() : location.reload(); }
+		// Closes THIS window, not the app. app.exit() would take every other
+		// open document with it; the quit is left to Electron, which ends the
+		// process once the last window is gone.
+		onClose: () => { window.electron_helper ? electron_helper.window.close() : location.reload(); }
 	});
 	g.statusBar = g.win.element.querySelector('.nui-status-bar');
 	// Two slots: the message (left) and the hovered link's destination (right),

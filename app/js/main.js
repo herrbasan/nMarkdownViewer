@@ -6,7 +6,7 @@
 
 if (require('electron-squirrel-startup')) return;
 
-const { app, Menu, screen, ipcMain, shell } = require('electron');
+const { app, Menu, screen, ipcMain, shell, BrowserWindow } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -26,20 +26,31 @@ const env = {
 };
 
 // Single instance (SoundApp behavior): a second OS open forwards the file
-// to the running window instead of booting a new instance.
+// to a running window instead of booting a new instance. Linked documents
+// open their own windows, so "the running window" is not a fixed one.
 let mainWin = null;
 if (app.requestSingleInstanceLock()) {
 	app.on('second-instance', (e, argv) => {
 		const fp = argv.find(a => /\.(md|markdown)$/i.test(a) && fs.existsSync(a));
-		if (mainWin) {
-			if (mainWin.isMinimized()) mainWin.restore();
-			mainWin.focus();
-			if (fp) mainWin.webContents.send('os-open-file', path.resolve(fp));
+		const target = liveWindow();
+		if (target) {
+			if (target.isMinimized()) target.restore();
+			target.focus();
+			if (fp) target.webContents.send('os-open-file', path.resolve(fp));
 		}
 	});
 	init().catch(err => { console.error('main : FATAL', err); app.exit(1); });
 } else {
 	app.quit();
+}
+
+// Any window that can still take a message. mainWin is cleared when it
+// closes, and linked windows outlive it — asking a destroyed BrowserWindow
+// for its state throws.
+function liveWindow() {
+	if (mainWin && !mainWin.isDestroyed()) return mainWin;
+	const all = BrowserWindow.getAllWindows().filter(w => !w.isDestroyed());
+	return all.find(w => w.isFocused()) || all[0] || null;
 }
 
 if (env.isPackaged) {
@@ -129,7 +140,7 @@ ipcMain.handle('open-md-window', async (e, filePath) => {
 	const target = new URL(pathToFileURL(path.join(__dirname, '..', 'index.html')).href);
 	target.searchParams.set('file', abs);
 
-	const b = mainWin && !mainWin.isDestroyed() ? mainWin.getBounds() : null;
+	const b = liveWindow()?.getBounds() ?? null;
 	const win = await helper.tools.browserWindow('frameless', {
 		webPreferences: { preload: path.join(__dirname, '../modules/electron_helper/helper_new.js') },
 		devTools: !env.isPackaged,
@@ -171,6 +182,8 @@ async function init() {
 	});
 	installNavigationGuards(mainWin);
 	trackWindowState(mainWin);
+	// Cleared on close so the OS file-handoff never reaches a dead window.
+	mainWin.on('closed', () => { mainWin = null; });
 
 	// Renderer console → terminal (dev visibility)
 	if (!env.isPackaged) {
