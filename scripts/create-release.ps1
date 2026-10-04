@@ -160,11 +160,18 @@ if (-not $Notes) {
 # Create the GitHub release
 Write-Host "Creating GitHub release..." -ForegroundColor Yellow
 
+# Notes go through a FILE, not --notes. PowerShell hands a native command its
+# arguments as a single command line, and a multi-line string containing
+# double quotes (e.g. an "Open in default app" button name) does not survive
+# that intact — gh received fragments like `in` as arguments of its own.
+$notesFile = Join-Path $env:TEMP "nmdv-release-notes-$Version.md"
+[System.IO.File]::WriteAllText($notesFile, $Notes, (New-Object System.Text.UTF8Encoding $false))
+
 $ghArgs = @(
     "release", "create", "v$Version",
     "--repo", $Repo,
     "--title", "nMarkdownViewer v$Version",
-    "--notes", $Notes,
+    "--notes-file", $notesFile,
     $installerPath.FullName,
     $nupkgPath.FullName,
     $releasesPath.FullName
@@ -175,8 +182,10 @@ if ($Draft) {
 }
 
 & $ghPath @ghArgs
+$ghExit = $LASTEXITCODE
+Remove-Item $notesFile -ErrorAction SilentlyContinue
 
-if ($LASTEXITCODE -ne 0) {
+if ($ghExit -ne 0) {
     Write-Error "Failed to create GitHub release"
     exit 1
 }
