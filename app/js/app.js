@@ -12,15 +12,18 @@ import { htmlToMarkdown } from './md-serializer.js';
 import { createTts } from './tts.js';
 import { prefs } from './prefs.js';
 import { TtsPlayerHost } from './lib/tts-player.js';
+import { kindOf, langOf, isDisplayable, isTextual } from './file-types.js';
 
 const g = {
 	config: null,
 	win: null,            // appWindow chrome
 	statusBar: null,
 	dirHandle: null,      // FileSystemDirectoryHandle backing the tree
-	fs: null,             // { readdir, readFileHandle } adapter for the tree root
+	fs: null,             // { readdir, readFileHandle, assetUrl } adapter
 	fileHandle: null,     // FileSystemFileHandle of the open document
 	fileName: '',
+	docKind: 'markdown',  // what the viewer is showing — see file-types.js
+	assetUrl: null,       // URL for a non-textual document
 	markdown: '',
 	frontmatterRaw: null, // fenced YAML block preserved across edit round-trips
 	dirty: false,
@@ -238,6 +241,12 @@ function nativeFsAdapter() {
 					close: async () => {}
 				})
 			};
+		},
+		// A URL the <img>/<video>/<audio> can load. The file is never read
+		// into the renderer — the helper's `raum` protocol serves it from
+		// disk, which is also why this works for bytes that are not text.
+		async assetUrl(fp) {
+			return `raum:///${fp.replace(/\\/g, '/')}`;
 		}
 	};
 }
@@ -265,8 +274,26 @@ function fsAccessAdapter(rootHandle) {
 			}
 			return entries;
 		},
-		readFileHandle: (path) => walk(path, true)
+		readFileHandle: (path) => walk(path, true),
+		// The browser has no path — the only way to a byte-exact URL is the
+		// handle's File. Object URLs are single-use per document, so each one
+		// is revoked when the document changes.
+		async assetUrl(path, handle) {
+			const url = URL.createObjectURL(await handle.getFile());
+			assetUrls.push(url);
+			return url;
+		}
 	};
+}
+
+// Object URLs minted for the current binary document. Released on every
+// document change — a viewer left open over many videos would otherwise pin
+// every one of them in memory.
+let assetUrls = [];
+
+function releaseAssetUrls() {
+	for (const u of assetUrls) URL.revokeObjectURL(u);
+	assetUrls = [];
 }
 
 
@@ -356,16 +383,16 @@ async function rootTree(root, openPath = null) {
 	// starts the scan — guaranteeing the document renders before the tree.
 }
 
-// Open the alphabetically first Markdown file in the tree root. The document
+// Open the alphabetically first file the viewer can display. The document
 // renders first; only then does the (potentially heavy) tree scan run in the
 // background, revealing the opened file once its node exists.
 async function openFirstMarkdown() {
 	const entries = await g.fs.readdir(g.rootPath);
 	const first = entries
-		.filter(e => e.kind === 'file' && /\.(md|markdown)$/i.test(e.name))
+		.filter(e => e.kind === 'file' && isDisplayable(e.name))
 		.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))[0];
 	if (!first) {
-		status('No Markdown files in this folder.');
+		status('No displayable files in this folder.');
 		scanTreeInBackground();
 		return;
 	}
@@ -376,8 +403,8 @@ async function openFirstMarkdown() {
 
 async function onTreeFile(entry) {
 	if (entry.kind === 'dir') return;
-	if (!/\.(md|markdown)$/i.test(entry.name)) {
-		status(`${entry.name} is not a Markdown file.`);
+	if (!isDisplayable(entry.name)) {
+		status(`${entry.name} is not a file the viewer can display.`);
 		return;
 	}
 	await openTreePath(entry.path);
@@ -398,10 +425,24 @@ async function openTreePath(path) {
 // scan is still running. Returns true when a document was opened.
 async function openDocumentAt(path) {
 	if (!await confirmDiscard()) return false;
+	const name = path.split(/[\\/]/).pop();
+	const kind = kindOf(name);
+	if (!kind) {
+		status(`${name} is not a file the viewer can display.`);
+		return false;
+	}
 	const handle = await g.fs.readFileHandle(path);
 	handle._nmdvPath = path;
-	const file = await handle.getFile();
-	loadDocument(handle, file.name, await file.text());
+
+	// Binary kinds are never decoded as text — a JPEG read as UTF-8 is
+	// corruption, and it is also the slow path for a large video. Only the
+	// textual kinds pay for a read.
+	if (isTextual(name)) {
+		const file = await handle.getFile();
+		loadDocument(handle, name, await file.text(), kind);
+	} else {
+		loadAsset(handle, name, kind, await g.fs.assetUrl(path, handle));
+	}
 	return true;
 }
 
@@ -412,15 +453,18 @@ async function openFile() {
 	if (!await confirmDiscard()) return;
 	let handle;
 	try {
-		[handle] = await window.showOpenFilePicker({
-			types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown'] } }]
-		});
+		[handle] = await window.showOpenFilePicker({ multiple: false });
 	} catch (err) {
 		if (err.name === 'AbortError') return;
 		throw err;
 	}
 	const file = await handle.getFile();
-	loadDocument(handle, file.name, await file.text());
+	if (!isDisplayable(file.name)) {
+		status(`${file.name} is not a file the viewer can display.`);
+		return;
+	}
+	if (isTextual(file.name)) loadDocument(handle, file.name, await file.text(), kindOf(file.name));
+	else loadAsset(handle, file.name, kindOf(file.name), await g.fs.assetUrl('', handle));
 	selectInTree(file.name);
 }
 
@@ -457,8 +501,8 @@ async function onDrop(e) {
 			await openFirstMarkdown();
 			return;
 		}
-		if (!/\.(md|markdown)$/i.test(p)) {
-			status('Drop ignored: not a Markdown file.');
+		if (!/\.(md|markdown)$/i.test(p) && !isDisplayable(p)) {
+			status('Drop ignored: not a file the viewer can display.');
 			return;
 		}
 		const dir = g.npath.dirname(p);
@@ -480,8 +524,8 @@ async function onDrop(e) {
 	}
 
 	const file = item.getAsFile();
-	if (!file || !/\.(md|markdown)$/i.test(file.name)) {
-		status('Drop ignored: not a Markdown file.');
+	if (!file || !isDisplayable(file.name)) {
+		status('Drop ignored: not a file the viewer can display.');
 		return;
 	}
 	if (!await confirmDiscard()) return;
@@ -501,11 +545,14 @@ async function confirmDiscard() {
 
 // ################################# DOCUMENT
 
-function loadDocument(handle, name, text) {
+function loadDocument(handle, name, text, kind = 'markdown') {
 	g.tts?.stop();
+	releaseAssetUrls();
 	g.fileHandle = handle;
 	g.fileName = name;
+	g.docKind = kind;
 	g.markdown = text;
+	g.frontmatterRaw = null;
 	g.dirty = false;
 	setMode('view');
 	renderView();
@@ -514,9 +561,36 @@ function loadDocument(handle, name, text) {
 	const app = document.querySelector('nui-app');
 	if (app.classList.contains('sidebar-open')) app.toggleSidebar('left');
 	setTitle(name);
-	setBtn('btn-edit', false);
-	setBtn('btn-listen', !g.tts?.available);
-	status(`Opened ${name} (${text.length} chars)`);
+	afterLoad(name, text.length);
+}
+
+// A non-textual document: the bytes stay on disk, the viewer gets a URL.
+// `g.markdown` stays empty so Listen has nothing to speak and the editor
+// never opens — the only thing the app can do with an image is look at it.
+function loadAsset(handle, name, kind, url) {
+	g.tts?.stop();
+	releaseAssetUrls();
+	g.fileHandle = handle;
+	g.fileName = name;
+	g.docKind = kind;
+	g.assetUrl = url;
+	g.markdown = '';
+	g.frontmatterRaw = null;
+	g.dirty = false;
+	setMode('view');
+	renderView();
+	document.getElementById('md-main').scrollTop = 0;
+	const app = document.querySelector('nui-app');
+	if (app.classList.contains('sidebar-open')) app.toggleSidebar('left');
+	setTitle(name);
+	afterLoad(name, null);
+}
+
+// Toolbar state is a function of the KIND, not of which file was picked.
+function afterLoad(name, charCount) {
+	setBtn('btn-edit', g.docKind !== 'markdown');
+	setBtn('btn-listen', !g.tts?.available || !g.markdown);
+	status(`Opened ${name}${charCount === null ? '' : ` (${charCount} chars)`}`);
 }
 
 async function writeFile() {
@@ -582,13 +656,14 @@ function resolveImageUri(url) {
 //
 // Three destinations, decided by the href alone:
 //   web (http/https/mailto) → the OS browser, never an Electron window
-//   local .md/.markdown     → a new nMarkdownViewer window
-//   local anything else     → the OS handler for that file type
+//   local, displayable here  → a new nMarkdownViewer window
+//   local, anything else     → the OS handler for that file type
 // A bare #fragment stays in-document. nui-markdown emits anchors with no
 // target, so nothing is intercepted before this — the stage is the only
 // routing point, and main.js guards the navigation it can't catch.
-
-const MD_RE = /\.(md|markdown)$/i;
+//
+// "Displayable" is the same table the viewer itself uses (file-types.js), so
+// a linked image opens the way a dropped image does.
 
 function currentDocDir() {
 	const docPath = g.fileHandle?._nmdvPath;
@@ -662,12 +737,13 @@ async function onLinkClick(e) {
 		}
 		const target = resolved.path + resolved.extra;
 
-		if (MD_RE.test(resolved.path)) {
-			await window.nmdv_node.ipcRenderer.invoke('open-md-window', resolved.path);
+		// Anything the viewer can put on screen earns its own window — a
+		// linked image or audio file is a document now, not an attachment.
+		if (isDisplayable(resolved.path)) {
+			await window.nmdv_node.ipcRenderer.invoke('open-doc-window', resolved.path);
 			return;
 		}
-		await window.nmdv_node.ipcRenderer.invoke('open-local', target);
-	} catch (err) {
+		await window.nmdv_node.ipcRenderer.invoke('open-local', target);	} catch (err) {
 		status(`Cannot open ${href}: ${err.message}`);
 	}
 }
@@ -716,6 +792,12 @@ function renderView() {
 	document.getElementById('viewer')?.remove();
 	const welcome = document.getElementById('welcome');
 	if (welcome) welcome.remove();
+
+	if (g.docKind === 'markdown') return renderMarkdown();
+	renderAsset();
+}
+
+function renderMarkdown() {
 	const viewer = document.createElement('nui-markdown');
 	viewer.id = 'viewer';
 	// No frontmatter attribute — nui-markdown defaults to 'collapsed'
@@ -734,6 +816,81 @@ function renderView() {
 			}
 		}
 	}
+}
+
+// Chrome per kind. The wrapper carries the kind as a class so all of this
+// lives in main.css — a `.md` link and a dragged `.mp3` are the same code
+// path, and the layout is one stylesheet away from review.
+function renderAsset() {
+	const wrap = document.createElement('div');
+	wrap.id = 'viewer';
+	wrap.className = `asset asset-${g.docKind}`;
+	const src = g.assetUrl;
+
+	if (g.docKind === 'image') {
+		const img = document.createElement('img');
+		img.src = src;
+		img.alt = g.fileName;
+		wrap.appendChild(img);
+
+	} else if (g.docKind === 'video' || g.docKind === 'audio') {
+		// A card, because a bare <video> at the full column width is a black
+		// rectangle with a progress bar in it. Audio is capped much narrower
+		// than video — it has no picture, so the width would be dead space.
+		// The sizing class is on OUR wrapper: a NUI component never carries
+		// one, and never gets styled.
+		wrap.innerHTML = `
+			<div class="asset-card">
+				<nui-card>
+					<nui-media-player type="${g.docKind}" pause-others>
+						<${g.docKind} src="${escapeAttr(src)}" controls preload="metadata"></${g.docKind}>
+					</nui-media-player>
+					<p class="asset-name"></p>
+				</nui-card>
+			</div>`;
+		wrap.querySelector('.asset-name').textContent = g.fileName;
+
+	} else if (g.docKind === 'text') {
+		const ed = document.createElement('nui-code-editor');
+		ed.setAttribute('data-lang', langOf(g.fileName) || 'txt');
+		ed.setAttribute('aria-label', g.fileName);
+		wrap.appendChild(ed);
+
+	} else if (g.docKind === 'html') {
+		// Sandboxed, and deliberately WITHOUT allow-same-origin. This window
+		// runs nodeIntegration, so injecting the file into our own document
+		// would hand any script on disk full Node access; a sandboxed frame
+		// with an opaque origin gets normal rendering and no route back.
+		const frame = document.createElement('iframe');
+		frame.className = 'asset-frame';
+		frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups');
+		frame.setAttribute('referrerpolicy', 'no-referrer');
+		frame.src = src;
+		wrap.appendChild(frame);
+	}
+
+	el.page.appendChild(wrap);
+
+	// nui-code-editor builds its DOM in connectedCallback, and its value
+	// setter writes straight into that DOM — so the value can only be
+	// assigned once the element is CONNECTED, or it throws on an undefined
+	// _editor. The isConnected guard drops the work if the document changed
+	// while we waited for the definition.
+	if (g.docKind === 'text') {
+		const ed = wrap.querySelector('nui-code-editor');
+		customElements.whenDefined('nui-code-editor').then(() => {
+			if (!ed.isConnected) return;
+			ed.value = g.markdown;
+			// nui-code-editor is contenteditable by design and has no
+			// read-only switch; a file opened for VIEWING must not invite
+			// edits that go nowhere.
+			ed.querySelector('.nui-code-editor-input')?.setAttribute('contenteditable', 'false');
+		});
+	}
+}
+
+function escapeAttr(s) {
+	return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
 
 function toggleEdit() {

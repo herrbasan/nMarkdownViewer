@@ -85,6 +85,43 @@ pushed `master`; refuses if the tag exists).
   files, revisit before ever rendering untrusted content.
 - **nSpeech port/CORS** — see Open Questions in the spec.
 
+## File Types — the display table
+
+`app/js/file-types.js` is the single extension → kind table. Everything that
+can open a file consults it: the tree, drop, the OS file handoff, the open
+dialog and link routing. A file reached five different ways renders
+identically because there is only one answer to ask.
+
+| kind | extensions | chrome |
+|------|-----------|--------|
+| `markdown` | `.md` `.markdown` | `nui-markdown`, the WYSIWYG editor stays available |
+| `image` | png jpg gif webp avif bmp ico svg | centred, height-capped, rounded |
+| `video` | mp4 webm ogv mov m4v mkv | card at the reading measure (56rem) |
+| `audio` | mp3 wav ogg oga flac m4a aac opus | card at 28rem — no picture, so width would be dead space |
+| `text` | txt log json js ts css py sh … | `nui-code-editor`, read-only |
+| `html` | html htm xhtml xml | **sandboxed iframe**, full content width |
+| `null` | everything else | handed to the OS, as before |
+
+- **Binary kinds are never read as text.** A JPEG decoded as UTF-8 is
+  corruption and a large video read into the renderer is the slow path. The
+  adapters expose `assetUrl(path, handle)`: Electron builds a `raum:///` URL
+  the helper's protocol serves from disk, the browser mints an object URL from
+  the handle and revokes it when the document changes.
+- **HTML runs in a sandboxed iframe, never in our document.** This window has
+  `nodeIntegration: true`, so injecting a `.html` file into the page would
+  hand any script on disk full Node access. `sandbox="allow-scripts"` without
+  `allow-same-origin` gives real rendering and an opaque origin — the parent
+  cannot even read `contentDocument` back.
+- **`nui-code-editor` is contenteditable and has no read-only switch.** Its
+  `value` setter writes into DOM that `connectedCallback` builds, so the value
+  can only be assigned once the element is *connected*. It is also set
+  `contenteditable="false"` after mount: a file opened for viewing must not
+  invite edits that go nowhere.
+- The highlighter knows five languages (html/xml, css, js, ts, json). Anything
+  else is escaped and left plain rather than mis-coloured.
+- **PDF is deliberately absent.** Chromium renders it through a plugin that
+  cannot be embedded, so it goes to the OS handler like any unknown type.
+
 ## Link Handling
 
 `nui-markdown` emits bare `<a href>` (no `target`), so `app.js` is the only
@@ -94,9 +131,12 @@ every document re-render into the viewer.
 | href | destination |
 |------|-------------|
 | `http`/`https`/`mailto` | `shell.openExternal` — the **system** browser |
-| relative or absolute `.md`/`.markdown` | a **new** nMarkdownViewer window |
+| local, displayable by us | a **new** nMarkdownViewer window |
 | any other local file | `shell.openPath` (OS handler for that type) |
 | `#fragment` | left to the browser (in-document) |
+
+"Displayable" is `isDisplayable()` from `file-types.js` — the same table the
+viewer itself uses, so a linked `.png` opens the way a dropped `.png` does.
 
 - **The OS is a boundary.** `shell.openPath` signals failure by *resolving* to
   an error string, so `open-local` throws on it; the stage catches and reports
@@ -138,6 +178,8 @@ every document re-render into the viewer.
 - 2026-09-13 incident: that 0-byte `prefs.json` broke startup exactly as above; the user's first instinct — "a destroyed config stopped initialization partway" — was correct.
 - **`appWindow()` wipes `document.body`.** With the default target it runs `document.body.innerHTML = ''`, so any static markup that is a direct child of `<body>` (e.g. a `<nui-dropzone>` overlay) is silently destroyed at boot — the element simply never exists, no error. Create such elements in JS *after* the `appWindow(...)` call; core NUI components self-upgrade on dynamic insertion. (2026-09-20, full-window drag & drop.)
 - **Drag & drop in Electron: `File.path` is gone** (removed in modern Electron). Use `webUtils.getPathForFile(file)` — exposed on the `nmdv_node` bridge in [app/index.html](app/index.html). Dropped folders arrive as `File` entries too; `fsp.stat` decides file vs. directory.
+- **`fetch()` over `raum://` is CORS-blocked** from a `file://` origin. Media elements are fine (they load via `src`, not `fetch`), but don't reach for `fetch` to read an asset back — read the file with `nfs` instead.
+- **A custom element's `value` setter can run before its DOM exists.** `nui-code-editor` builds its children in `connectedCallback`; assigning `.value` first throws `Cannot set properties of undefined (setting 'innerHTML')` at `renderBlock`. Append, *then* assign.
 
 ## File Association Pattern (M5, for the next major release)
 

@@ -128,10 +128,13 @@ ipcMain.handle('open-local', async (e, filePath) => {
 	if (err) throw new Error(err);
 });
 
-ipcMain.handle('open-md-window', async (e, filePath) => {
+ipcMain.handle('open-doc-window', async (e, filePath) => {
 	const abs = path.resolve(filePath);
-	if (!/\.(md|markdown)$/i.test(abs)) throw new Error(`Not a Markdown file: ${abs}`);
+	// Extension policy belongs to the stage (file-types.js) — main only
+	// guarantees the thing exists. Anything that isn't a file at all fails
+	// here rather than opening an empty window.
 	if (!fs.existsSync(abs)) throw new Error(`File not found: ${abs}`);
+	if (fs.statSync(abs).isDirectory()) throw new Error(`Not a file: ${abs}`);
 
 	// The document travels in the query string. The helper's browserWindow()
 	// loads through loadFile(), which cannot carry one, and env is a

@@ -29,6 +29,81 @@ html, body {
 	min-width: 0;
 }
 
+/* ################################# ASSET CHROME
+   One wrapper per non-markdown document, the kind as a class. A bare <video>
+   at the full column width is a black rectangle with a progress bar in it, and
+   an <audio> has no picture at all — so both sit in a card sized to their
+   content, not to the reading measure. */
+
+.asset {
+	display: flex;
+	justify-content: center;
+	align-items: flex-start;
+}
+
+.asset-image img {
+	display: block;
+	max-width: 100%;
+	max-height: calc(100vh - 2 * var(--nui-app-statusbar-height) - 6rem);
+	border-radius: var(--border-radius1-3);
+	background: var(--color-shade2);
+}
+
+.asset-card {
+	/* Audio is narrow because it has nothing to show; video gets the reading
+	   measure because its picture does. */
+	max-width: 100%;
+	margin-inline: auto;
+	width: 100%;
+}
+
+.asset-audio .asset-card {
+	max-width: 28rem;
+	margin-block: var(--nui-space-double);
+}
+
+.asset-video .asset-card {
+	max-width: 56rem;
+	margin-block: var(--nui-space-double);
+}
+
+/* The native element, not the NUI wrapper — a component never gets styled. */
+.asset-card video,
+.asset-card audio {
+	display: block;
+	width: 100%;
+}
+
+.asset-name {
+	margin: 0;
+	padding-top: var(--nui-space);
+	font-size: var(--font-size-small);
+	color: var(--text-color-dim);
+	text-align: center;
+	overflow-wrap: anywhere;
+}
+
+.asset-text {
+	justify-content: stretch;
+	align-items: stretch;
+}
+
+/* The HTML frame fills the content area rather than the reading measure — a
+   document is already its own layout, and constraining it would be the
+   viewer's opinion of someone else's page. */
+.asset-html {
+	align-items: stretch;
+}
+
+.asset-frame {
+	width: 100%;
+	height: calc(100vh - var(--nui-app-statusbar-height) - 8rem);
+	min-height: 24rem;
+	border: var(--border-thickness) solid var(--border-shade1-4);
+	border-radius: var(--border-radius1-3);
+	background: var(--color-base);
+}
+
 #doc-title {
 	font-weight: 600;
 	overflow: hidden;
