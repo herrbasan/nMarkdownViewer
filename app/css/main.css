@@ -33,7 +33,14 @@ html, body {
    One wrapper per non-markdown document, the kind as a class. A bare <video>
    at the full column width is a black rectangle with a progress bar in it, and
    an <audio> has no picture at all — so both sit in a card sized to their
-   content, not to the reading measure. */
+   content, not to the reading measure.
+
+   Image, video and text ask the theme for `breakout`, which lets a child of
+   nui-page span the full content width while keeping the text-flow gutter.
+   They then fill the height that is left below the chrome and bound
+   themselves on BOTH axes with object-fit — a tall screenshot and a wide
+   video both use the whole pane, neither is cropped, and neither overflows
+   into the status bar. */
 
 .asset {
 	display: flex;
@@ -41,30 +48,52 @@ html, body {
 	align-items: flex-start;
 }
 
-.asset-image img {
+.asset-image,
+.asset-video {
+	/* The pane, minus the titlebar, the status bar and the page gutter. */
+	height: calc(100vh - var(--nui-app-titlebar-height) - var(--nui-app-statusbar-height) - 4 * var(--nui-space));
+	align-items: center;
+}
+
+.asset-image img,
+.asset-video video {
 	display: block;
-	max-width: 100%;
-	max-height: calc(100vh - 2 * var(--nui-app-statusbar-height) - 6rem);
-	border-radius: var(--border-radius1-3);
+	width: 100%;
+	height: 100%;
+	/* Fills the pane on both axes and letterboxes the content, so a wide
+	   video and a tall screenshot both use the whole box, neither is cropped
+	   and neither overflows. `contain` also scales a small file UP to the
+	   space it has, which is the point of bounding rather than shrinking. */
+	object-fit: contain;
 	background: var(--color-shade2);
+	border-radius: var(--border-radius1-3);
 }
 
 .asset-card {
-	/* Audio is narrow because it has nothing to show; video gets the reading
-	   measure because its picture does. */
+	/* Audio is the narrow one because it has nothing to show; video gets the
+	   reading measure because its picture does. */
 	max-width: 100%;
 	margin-inline: auto;
 	width: 100%;
 }
 
 .asset-audio .asset-card {
-	max-width: 28rem;
+	max-width: 40rem;
 	margin-block: var(--nui-space-double);
 }
 
 .asset-video .asset-card {
-	max-width: 56rem;
-	margin-block: var(--nui-space-double);
+	max-width: 100%;
+	height: 100%;
+	/* Two rows: the player takes the pane, the filename the rest. A grid item
+	   stretches to its row by default, which is how the player gets a bounded
+	   height WITHOUT styling the component — it has no intrinsic one, so a
+	   tall video would otherwise size the box to its own aspect ratio and
+	   overflow the pane. minmax(0, 1fr) is load-bearing: a bare 1fr floors the
+	   row at its content's min-content size, which for a <video> is its
+	   intrinsic height at full width — exactly the overflow we are removing. */
+	display: grid;
+	grid-template-rows: minmax(0, 1fr) auto;
 }
 
 /* The native element, not the NUI wrapper — a component never gets styled. */
@@ -72,6 +101,44 @@ html, body {
 .asset-card audio {
 	display: block;
 	width: 100%;
+}
+
+/* The component ships object-fit: cover, which crops a tall or a wide video.
+   A viewer must show the frame the author made. */
+.asset-video video {
+	object-fit: contain;
+	background: #000;
+}
+
+/* A file with no viewer: the icon is the message, and the button is the only
+   action left. */
+.asset-unopenable {
+	max-width: 30rem;
+	margin-block: 12vh;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--nui-space);
+	padding: var(--nui-space-double);
+	text-align: center;
+}
+
+.asset-unopenable nui-icon {
+	font-size: 2.5rem;
+	color: var(--text-color-dim);
+}
+
+.asset-unopenable .asset-name {
+	padding-top: 0;
+	font-size: var(--font-size-base);
+	color: var(--text-color);
+	overflow-wrap: anywhere;
+}
+
+.asset-note {
+	margin: 0;
+	color: var(--text-color-dim);
+	font-size: var(--font-size-small);
 }
 
 .asset-name {
@@ -83,9 +150,12 @@ html, body {
 	overflow-wrap: anywhere;
 }
 
+/* Text is a document, not a picture: it takes the full width and grows, so a
+   long file scrolls under the app's own scroll container exactly as Markdown
+   does. Boxing it to the pane height would put the tail out of reach. */
 .asset-text {
 	justify-content: stretch;
-	align-items: stretch;
+	align-items: flex-start;
 }
 
 /* The HTML frame fills the content area rather than the reading measure — a

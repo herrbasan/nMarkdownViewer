@@ -95,13 +95,30 @@ identically because there is only one answer to ask.
 | kind | extensions | chrome |
 |------|-----------|--------|
 | `markdown` | `.md` `.markdown` | `nui-markdown`, the WYSIWYG editor stays available |
-| `image` | png jpg gif webp avif bmp ico svg | centred, height-capped, rounded |
-| `video` | mp4 webm ogv mov m4v mkv | card at the reading measure (56rem) |
-| `audio` | mp3 wav ogg oga flac m4a aac opus | card at 28rem — no picture, so width would be dead space |
-| `text` | txt log json js ts css py sh … | `nui-code-editor`, read-only |
+| `image` | png jpg gif webp avif bmp ico svg | fills the pane, `object-fit: contain` |
+| `video` | mp4 webm ogv mov m4v mkv | fills the pane, `object-fit: contain` |
+| `audio` | mp3 wav ogg oga flac m4a aac opus | card at 40rem — no picture, so width would be dead space |
+| `text` | txt log json js ts css py sh … | `nui-code-editor`, read-only, full width |
 | `html` | html htm xhtml xml | **sandboxed iframe**, full content width |
-| `null` | everything else | handed to the OS, as before |
+| `unsupported` | everything else | *shown*, with an "Open in default app" button |
+| — | (no entry) | a link, which still goes to the OS handler |
 
+- **A file with no viewer is shown, not refused.** The user picked it
+  deliberately — dropped it, double-clicked it, clicked it in the tree — and a
+  status line is not an answer. The view names it and offers the one action
+  that still works. The button needs both the Electron shell *and* a real
+  path; a browser handle, or a file from the open dialog, has neither, so it
+  is omitted rather than shown broken.
+- **Image, video and text ask for `breakout`.** That is the theme's own way to
+  let a child of `nui-page` span the full content width instead of being
+  letterboxed into the reading measure.
+- **`nui-media-player` has no intrinsic height and ships `object-fit: cover`.**
+  Two things follow. The card is a grid (`minmax(0, 1fr) auto`) so the player
+  stretches to the pane as a grid item — no styling of the component needed.
+  And a bare `1fr` is *not* enough: it floors the row at its content's
+  min-content size, which for a `<video>` is its intrinsic height at full
+  width, so a tall video overflows anyway. `cover` would also crop it, so the
+  native element gets `object-fit: contain`.
 - **Binary kinds are never read as text.** A JPEG decoded as UTF-8 is
   corruption and a large video read into the renderer is the slow path. The
   adapters expose `assetUrl(path, handle)`: Electron builds a `raum:///` URL
@@ -120,7 +137,12 @@ identically because there is only one answer to ask.
 - The highlighter knows five languages (html/xml, css, js, ts, json). Anything
   else is escaped and left plain rather than mis-coloured.
 - **PDF is deliberately absent.** Chromium renders it through a plugin that
-  cannot be embedded, so it goes to the OS handler like any unknown type.
+  cannot be embedded, so it lands in `unsupported` and the OS button opens it.
+- **The OS handoff takes any file, not just `.md`.** `fileArgFrom(argv)` picks
+  the first argument that is an absolute path to an existing *file*; matching
+  a `.md` extension instead would drop every image and video the user
+  double-clicks and silently fall through to the startup folder. Whether the
+  viewer can display it stays the stage's question.
 
 ## Link Handling
 

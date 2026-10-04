@@ -145,8 +145,10 @@ async function boot() {
 	const linked = new URLSearchParams(location.search).get('file');
 	if (linked || g.mainEnv?.filePath) {
 		const fp = linked || g.mainEnv.filePath;
+		const dir = g.npath.dirname(fp);
 		await rootTree(
-			{ name: g.npath.basename(g.npath.dirname(fp)), fs: nativeFsAdapter(), rootPath: g.npath.dirname(fp) },
+			// basename('X:\\') is '' — a drive root would show an unnamed tree.
+			{ name: g.npath.basename(dir) || dir, fs: nativeFsAdapter(), rootPath: dir },
 			fp
 		);
 	} else if (g.mainEnv) {
@@ -403,10 +405,6 @@ async function openFirstMarkdown() {
 
 async function onTreeFile(entry) {
 	if (entry.kind === 'dir') return;
-	if (!isDisplayable(entry.name)) {
-		status(`${entry.name} is not a file the viewer can display.`);
-		return;
-	}
 	await openTreePath(entry.path);
 }
 
@@ -427,12 +425,15 @@ async function openDocumentAt(path) {
 	if (!await confirmDiscard()) return false;
 	const name = path.split(/[\\/]/).pop();
 	const kind = kindOf(name);
-	if (!kind) {
-		status(`${name} is not a file the viewer can display.`);
-		return false;
-	}
 	const handle = await g.fs.readFileHandle(path);
 	handle._nmdvPath = path;
+
+	// A file we cannot render is still worth opening: naming it, and offering
+	// the OS, beats a status line the user has already looked past.
+	if (!kind) {
+		loadUnsupported(handle, name, path);
+		return true;
+	}
 
 	// Binary kinds are never decoded as text — a JPEG read as UTF-8 is
 	// corruption, and it is also the slow path for a large video. Only the
@@ -459,12 +460,16 @@ async function openFile() {
 		throw err;
 	}
 	const file = await handle.getFile();
-	if (!isDisplayable(file.name)) {
-		status(`${file.name} is not a file the viewer can display.`);
+	const kind = kindOf(file.name);
+	if (!kind) {
+		// No tree path here (a picked file has no parent in the browser), so
+		// the OS button is absent — but the user still learns what it is.
+		handle._nmdvPath = '';
+		loadUnsupported(handle, file.name, '');
 		return;
 	}
-	if (isTextual(file.name)) loadDocument(handle, file.name, await file.text(), kindOf(file.name));
-	else loadAsset(handle, file.name, kindOf(file.name), await g.fs.assetUrl('', handle));
+	if (isTextual(file.name)) loadDocument(handle, file.name, await file.text(), kind);
+	else loadAsset(handle, file.name, kind, await g.fs.assetUrl('', handle));
 	selectInTree(file.name);
 }
 
@@ -574,6 +579,30 @@ function loadAsset(handle, name, kind, url) {
 	g.fileName = name;
 	g.docKind = kind;
 	g.assetUrl = url;
+	g.markdown = '';
+	g.frontmatterRaw = null;
+	g.dirty = false;
+	setMode('view');
+	renderView();
+	document.getElementById('md-main').scrollTop = 0;
+	const app = document.querySelector('nui-app');
+	if (app.classList.contains('sidebar-open')) app.toggleSidebar('left');
+	setTitle(name);
+	afterLoad(name, null);
+}
+
+// A file with no renderer of its own — a .zip, an .exe, a .docx. It is shown
+// rather than refused, because the user picked it deliberately (dropped it,
+// double-clicked it, clicked it in the tree) and a status line is not an
+// answer. The one action that still works is handing it to the OS, so the
+// view offers exactly that.
+function loadUnsupported(handle, name, path) {
+	g.tts?.stop();
+	releaseAssetUrls();
+	g.fileHandle = handle;
+	g.fileName = name;
+	g.docKind = 'unsupported';
+	g.assetUrl = null;
 	g.markdown = '';
 	g.frontmatterRaw = null;
 	g.dirty = false;
@@ -827,6 +856,13 @@ function renderAsset() {
 	wrap.className = `asset asset-${g.docKind}`;
 	const src = g.assetUrl;
 
+	// A picture or a video is not prose: the reading measure would letterbox
+	// it into a strip. `breakout` is the theme's own way to let a child of
+	// nui-page span the full container while keeping the text-flow gutter.
+	if (g.docKind === 'image' || g.docKind === 'video' || g.docKind === 'text') {
+		wrap.setAttribute('breakout', '');
+	}
+
 	if (g.docKind === 'image') {
 		const img = document.createElement('img');
 		img.src = src;
@@ -867,6 +903,32 @@ function renderAsset() {
 		frame.setAttribute('referrerpolicy', 'no-referrer');
 		frame.src = src;
 		wrap.appendChild(frame);
+
+	} else if (g.docKind === 'unsupported') {
+		wrap.innerHTML = `
+			<div class="asset-card asset-unopenable">
+				<nui-icon name="open_in_full"></nui-icon>
+				<p class="asset-name"></p>
+				<p class="asset-note">nMarkdownViewer has no viewer for this file type.</p>
+			</div>`;
+		wrap.querySelector('.asset-name').textContent = g.fileName;
+
+		// The OS is the only route out, and it needs both the desktop shell
+		// and a real path — a browser handle carries neither, and a file
+		// picked through the open dialog has no parent to resolve one from.
+		const osPath = g.fileHandle?._nmdvPath;
+		if (window.electron_helper && osPath) {
+			wrap.querySelector('.asset-unopenable')
+				.insertAdjacentHTML('beforeend',
+					'<nui-button><button type="button">Open in default app</button></nui-button>');
+			wrap.querySelector('button').addEventListener('click', async () => {
+				try {
+					await window.nmdv_node.ipcRenderer.invoke('open-local', osPath);
+				} catch (err) {
+					status(`Cannot open ${g.fileName}: ${err.message}`);
+				}
+			});
+		}
 	}
 
 	el.page.appendChild(wrap);

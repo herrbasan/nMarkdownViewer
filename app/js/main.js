@@ -31,7 +31,7 @@ const env = {
 let mainWin = null;
 if (app.requestSingleInstanceLock()) {
 	app.on('second-instance', (e, argv) => {
-		const fp = argv.find(a => /\.(md|markdown)$/i.test(a) && fs.existsSync(a));
+		const fp = fileArgFrom(argv);
 		const target = liveWindow();
 		if (target) {
 			if (target.isMinimized()) target.restore();
@@ -158,10 +158,24 @@ ipcMain.handle('open-doc-window', async (e, filePath) => {
 	return true;
 });
 
+// Any FILE the OS handed us, whatever its type. Whether the viewer can
+// display it is the stage's question (file-types.js) — main only has to tell
+// a path argument apart from the exe, a flag, or the app directory. Matching
+// on a .md extension instead would drop every image and video the user
+// double-clicks, and silently fall through to the startup folder.
+function fileArgFrom(argv) {
+	for (const a of argv.slice(1)) {
+		if (typeof a !== 'string' || a.startsWith('-') || !path.isAbsolute(a)) continue;
+		try {
+			if (fs.statSync(a).isFile()) return path.resolve(a);
+		} catch { /* not a path we can read — keep looking */ }
+	}
+	return null;
+}
+
 async function init() {
 	// File opened via OS (double-click / drag onto icon / CLI arg)
-	const fileArg = process.argv.find(a => /\.(md|markdown)$/i.test(a) && fs.existsSync(a));
-	env.filePath = fileArg ? path.resolve(fileArg) : null;
+	env.filePath = fileArgFrom(process.argv);
 
 	let fp = env.isPackaged ? path.dirname(env.app_path) : env.app_path;
 	const config = await helper.tools.readJSON(path.join(fp, 'config.json'));
