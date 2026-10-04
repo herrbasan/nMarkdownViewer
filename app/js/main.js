@@ -128,29 +128,6 @@ ipcMain.handle('open-local', async (e, filePath) => {
 	if (err) throw new Error(err);
 });
 
-ipcMain.handle('open-pdf-window', async (e, filePath) => {
-	const abs = path.resolve(filePath);
-	if (!fs.existsSync(abs)) throw new Error(`File not found: ${abs}`);
-
-	// Chromium's PDF viewer is an internal component that will not run inside
-	// an <iframe> — it refuses to render in a subframe — so a PDF gets its own
-	// top-level window, where the real viewer (toolbar, zoom, page nav) loads.
-	// The raum:// protocol serves the bytes from disk exactly as it does for
-	// images, so the viewer sees a normal PDF response.
-	const b = liveWindow()?.getBounds() ?? null;
-	const win = new BrowserWindow({
-		width: b ? b.width : 1100,
-		height: b ? b.height : 800,
-		...(b ? { x: b.x + 32, y: b.y + 32 } : {}),
-		title: path.basename(abs),
-		backgroundColor: '#1c1c1c'
-	});
-	await win.loadURL('raum:///' + abs.replace(/\\/g, '/'));
-	// No navigation guard here: this window exists to navigate, and a PDF
-	// viewer that cannot follow a link inside the document is broken.
-	return true;
-});
-
 ipcMain.handle('open-doc-window', async (e, filePath) => {
 	const abs = path.resolve(filePath);
 	// Extension policy belongs to the stage (file-types.js) — main only

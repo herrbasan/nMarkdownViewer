@@ -438,18 +438,10 @@ async function openDocumentAt(path) {
 		return true;
 	}
 
-	// A PDF is a window (main.js), not a view — Chromium's viewer refuses to
-	// run in a subframe. A .docx is unpacked and converted. Neither is text,
-	// so neither is read with getFile().text().
-	if (kind === 'pdf') {
-		loadAsset(handle, name, 'pdf', await g.fs.assetUrl(path, handle));
-		try {
-			await window.nmdv_node.ipcRenderer.invoke('open-pdf-window', path);
-		} catch (err) {
-			status(`Cannot open ${name}: ${err.message}`);
-		}
-		return true;
-	}
+	// A .docx is unpacked and converted. It is not text, so it is never read
+	// with getFile().text(). A PDF is not ours at all — Electron's viewer
+	// cannot render it here (see file-types.js), so it falls through to the
+	// unsupported view and the OS.
 	if (kind === 'docx') {
 		loadDocx(handle, name, path);
 		return true;
@@ -942,27 +934,6 @@ function renderAsset() {
 		frame.setAttribute('referrerpolicy', 'no-referrer');
 		frame.src = src;
 		wrap.appendChild(frame);
-
-	} else if (g.docKind === 'pdf') {
-		// The real viewer is the window that just opened; this pane says so
-		// and offers the button again in case it was closed.
-		wrap.innerHTML = `
-			<div class="asset-card asset-unopenable">
-				<nui-icon name="description"></nui-icon>
-				<p class="asset-name"></p>
-				<p class="asset-note">Opened in its own window, with the built-in PDF viewer.</p>
-			</div>`;
-		wrap.querySelector('.asset-name').textContent = g.fileName;
-		wrap.querySelector('.asset-unopenable')
-			.insertAdjacentHTML('beforeend',
-				'<nui-button><button type="button">Open again</button></nui-button>');
-		wrap.querySelector('button').addEventListener('click', async () => {
-			try {
-				await window.nmdv_node.ipcRenderer.invoke('open-pdf-window', g.fileHandle._nmdvPath);
-			} catch (err) {
-				status(`Cannot open ${g.fileName}: ${err.message}`);
-			}
-		});
 
 	} else if (g.docKind === 'docx') {
 		// Our own nodes, built with createTextNode — never innerHTML over

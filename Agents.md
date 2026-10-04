@@ -101,7 +101,7 @@ identically because there is only one answer to ask.
 | `text` | txt log json **jsonl** ndjson js ts css php py sh sql yaml … | `nui-code-editor`, read-only, full width |
 | `html` | html htm xhtml xml | **sandboxed iframe**, full content width |
 | `docx` | docx | unpacked and converted, reads like a document |
-| `pdf` | pdf | **its own window** — the Chromium viewer will not run in a subframe |
+| `pdf` | pdf | *not ours* — Electron's viewer cannot run here; the OS opens it |
 | `unsupported` | everything else, incl. legacy `.doc` | *shown*, with an "Open in default app" button |
 | — | (no entry) | a link, which still goes to the OS handler |
 
@@ -158,8 +158,15 @@ identically because there is only one answer to ask.
   invite edits that go nowhere.
 - The highlighter knows five languages (html/xml, css, js, ts, json). Anything
   else is escaped and left plain rather than mis-coloured.
-- **PDF is deliberately absent.** Chromium renders it through a plugin that
-  cannot be embedded, so it lands in `unsupported` and the OS button opens it.
+- **PDF is the OS's job, and that is measured, not assumed.** Electron gates
+  its PDF viewer on `webPreferences.plugins`, which **defaults to false**. With
+  it enabled, Electron 41's viewer still fails to start — `sandboxed_renderer.
+  bundle.js script failed to run` / `object null is not iterable` — and
+  `<embed type="application/pdf">` paints a blank box **without firing an
+  error event**, so there is no graceful fallback to detect. iframe, `<embed>`,
+  `<object>` and `<webview>` were each measured; none paint. In-app PDF would
+  mean vendoring pdf.js (a renderer, not a plugin), which is a project-level
+  call rather than a local patch.
 - **The OS handoff takes any file, not just `.md`.** `fileArgFrom(argv)` picks
   the first argument that is an absolute path to an existing *file*; matching
   a `.md` extension instead would drop every image and video the user

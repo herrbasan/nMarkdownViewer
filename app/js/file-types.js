@@ -35,12 +35,15 @@ const TEXT = {
 	'.editorconfig': '', '.npmrc': '', '.gitignore': ''
 };
 
-// Chromium renders a PDF through an internal viewer that will not run inside
-// an iframe, so a PDF is a WINDOW (main.js), not a view. A .docx is unpacked
-// and converted. Legacy .doc is a binary OLE2 compound file — there is no
-// honest way to render it without a converter, so it stays `null` and the OS
-// (i.e. Word) opens it, which is the right answer anyway.
-const PDF = new Set(['.pdf']);
+// PDF: Chromium's PDF viewer is GATED on webPreferences.plugins (which
+// defaults to FALSE), and with it enabled Electron 41's viewer bundle still
+// fails to start — "sandboxed_renderer.bundle.js script failed to run / object
+// null is not iterable" — so an <embed type="application/pdf"> paints a blank
+// box and fires no error event. The built-in viewer is simply not available
+// to this app, in-page or in a window of its own, so a PDF is left to the OS
+// (the `unsupported` view, which opens it in whatever the user already uses).
+// In-app PDF would mean vendoring pdf.js — a renderer, not a plugin — which
+// is a project-level call, not a local patch.
 const DOCX = new Set(['.docx']);
 const MARKUP = new Set(['.html', '.htm', '.xhtml', '.xml']);
 
@@ -49,7 +52,7 @@ function extOf(name) {
 	return i <= 0 ? '' : String(name).slice(i).toLowerCase();
 }
 
-// 'markdown' | 'image' | 'video' | 'audio' | 'text' | 'html' | 'pdf' | 'docx' | null
+// 'markdown' | 'image' | 'video' | 'audio' | 'text' | 'html' | 'docx' | null
 export function kindOf(name) {
 	const ext = extOf(name);
 	if (ext === '.md' || ext === '.markdown') return 'markdown';
@@ -58,7 +61,6 @@ export function kindOf(name) {
 	if (VIDEO.has(ext)) return 'video';
 	if (AUDIO.has(ext)) return 'audio';
 	if (ext in TEXT) return 'text';
-	if (PDF.has(ext)) return 'pdf';
 	if (DOCX.has(ext)) return 'docx';
 	return null;
 }
