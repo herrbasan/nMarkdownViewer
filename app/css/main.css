@@ -150,12 +150,37 @@ html, body {
 	overflow-wrap: anywhere;
 }
 
-/* Text is a document, not a picture: it takes the full width and grows, so a
-   long file scrolls under the app's own scroll container exactly as Markdown
-   does. Boxing it to the pane height would put the tail out of reach. */
+/* Text owns its own scrolling.
+   nui-code-editor already scrolls internally (.nui-code-editor-wrap is
+   overflow:auto) but only when the editor has a DEFINITE height — otherwise
+   the container's height:100% resolves to auto, the wrap never scrolls, the
+   document grows, and the PAGE scrolls instead. That is the reported bug: a
+   long line could only be reached by scrolling to the bottom of the file and
+   then sideways. Boxed to the pane, the text scrolls on both axes at all
+   times and the page itself never moves. */
 .asset-text {
 	justify-content: stretch;
+	align-items: stretch;
+	height: calc(100vh - var(--nui-app-titlebar-height) - var(--nui-app-statusbar-height) - 4 * var(--nui-space));
+	overflow: hidden;
+}
+
+/* A converted .docx is a document, so it reads like one: bounded to the
+   reading measure, left-aligned like every other page child, scrolling under
+   the app's own container. */
+.asset-docx {
+	justify-content: stretch;
 	align-items: flex-start;
+	overflow-wrap: break-word;
+}
+
+.asset-docx p {
+	margin: 0 0 var(--nui-space);
+}
+
+.asset-docx ul {
+	margin: 0 0 var(--nui-space);
+	padding-inline-start: var(--nui-space-double);
 }
 
 /* The HTML frame fills the content area rather than the reading measure — a

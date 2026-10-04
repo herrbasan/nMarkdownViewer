@@ -98,11 +98,33 @@ identically because there is only one answer to ask.
 | `image` | png jpg gif webp avif bmp ico svg | fills the pane, `object-fit: contain` |
 | `video` | mp4 webm ogv mov m4v mkv | fills the pane, `object-fit: contain` |
 | `audio` | mp3 wav ogg oga flac m4a aac opus | card at 40rem — no picture, so width would be dead space |
-| `text` | txt log json js ts css py sh … | `nui-code-editor`, read-only, full width |
+| `text` | txt log json **jsonl** ndjson js ts css php py sh sql yaml … | `nui-code-editor`, read-only, full width |
 | `html` | html htm xhtml xml | **sandboxed iframe**, full content width |
-| `unsupported` | everything else | *shown*, with an "Open in default app" button |
+| `docx` | docx | unpacked and converted, reads like a document |
+| `pdf` | pdf | **its own window** — the Chromium viewer will not run in a subframe |
+| `unsupported` | everything else, incl. legacy `.doc` | *shown*, with an "Open in default app" button |
 | — | (no entry) | a link, which still goes to the OS handler |
 
+- **Syntax highlighting has two sources and one vocabulary.** NUI's addon
+  owns five dialects (html/xml, css, js, ts, json); `app/js/highlight.js` adds
+  php, python, shell, powershell, sql, c, cpp, java, csharp, go, rust, ruby,
+  yaml, ini and diff. Both emit the same `hl-*` classes, so one stylesheet
+  covers them. `NUI_LANGS` decides which one runs — a supported language is
+  never handed to the app highlighter, so the two cannot drift.
+- **`.jsonl` is highlighted as json.** A JSON Lines file is not valid JSON as
+  a whole, but every value is and the token rules are per-value.
+- **The text view owns its scrolling.** `nui-code-editor` already scrolls
+  internally (`.nui-code-editor-wrap` is `overflow: auto`) but *only* when it
+  has a definite height — otherwise its `height: 100%` resolves to auto, the
+  wrap never scrolls, and the PAGE does. Boxed to the pane, a long line is
+  reachable sideways at any point in the file.
+- **`.docx` is read as bytes and converted** (`app/js/docx.js`): the ZIP
+  central directory is walked, `word/document.xml` is inflated, and the
+  WordprocessingML becomes real DOM nodes via `textContent` — never
+  `innerHTML` over untrusted XML. Headings, bold/italic/underline, bullets
+  and breaks render; tables and images do not. Legacy `.doc` is a binary OLE2
+  compound file with no honest in-process reader, so it goes to the OS —
+  which is Word, the right answer anyway.
 - **A file with no viewer is shown, not refused.** The user picked it
   deliberately — dropped it, double-clicked it, clicked it in the tree — and a
   status line is not an answer. The view names it and offers the one action

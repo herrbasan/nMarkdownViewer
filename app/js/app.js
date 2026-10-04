@@ -12,7 +12,9 @@ import { htmlToMarkdown } from './md-serializer.js';
 import { createTts } from './tts.js';
 import { prefs } from './prefs.js';
 import { TtsPlayerHost } from './lib/tts-player.js';
-import { kindOf, langOf, isDisplayable, isTextual } from './file-types.js';
+import { kindOf, langOf, isDisplayable, isTextual, NUI_LANGS } from './file-types.js';
+import { highlightCode } from './highlight.js';
+import { docxToFragment } from './docx.js';
 
 const g = {
 	config: null,
@@ -24,6 +26,7 @@ const g = {
 	fileName: '',
 	docKind: 'markdown',  // what the viewer is showing — see file-types.js
 	assetUrl: null,       // URL for a non-textual document
+	docFragment: null,    // converted .docx nodes
 	markdown: '',
 	frontmatterRaw: null, // fenced YAML block preserved across edit round-trips
 	dirty: false,
@@ -435,6 +438,23 @@ async function openDocumentAt(path) {
 		return true;
 	}
 
+	// A PDF is a window (main.js), not a view — Chromium's viewer refuses to
+	// run in a subframe. A .docx is unpacked and converted. Neither is text,
+	// so neither is read with getFile().text().
+	if (kind === 'pdf') {
+		loadAsset(handle, name, 'pdf', await g.fs.assetUrl(path, handle));
+		try {
+			await window.nmdv_node.ipcRenderer.invoke('open-pdf-window', path);
+		} catch (err) {
+			status(`Cannot open ${name}: ${err.message}`);
+		}
+		return true;
+	}
+	if (kind === 'docx') {
+		loadDocx(handle, name, path);
+		return true;
+	}
+
 	// Binary kinds are never decoded as text — a JPEG read as UTF-8 is
 	// corruption, and it is also the slow path for a large video. Only the
 	// textual kinds pay for a read.
@@ -556,6 +576,8 @@ function loadDocument(handle, name, text, kind = 'markdown') {
 	g.fileHandle = handle;
 	g.fileName = name;
 	g.docKind = kind;
+	g.assetUrl = null;
+	g.docFragment = null;
 	g.markdown = text;
 	g.frontmatterRaw = null;
 	g.dirty = false;
@@ -579,6 +601,7 @@ function loadAsset(handle, name, kind, url) {
 	g.fileName = name;
 	g.docKind = kind;
 	g.assetUrl = url;
+	g.docFragment = null;
 	g.markdown = '';
 	g.frontmatterRaw = null;
 	g.dirty = false;
@@ -603,6 +626,7 @@ function loadUnsupported(handle, name, path) {
 	g.fileName = name;
 	g.docKind = 'unsupported';
 	g.assetUrl = null;
+	g.docFragment = null;
 	g.markdown = '';
 	g.frontmatterRaw = null;
 	g.dirty = false;
@@ -613,6 +637,22 @@ function loadUnsupported(handle, name, path) {
 	if (app.classList.contains('sidebar-open')) app.toggleSidebar('left');
 	setTitle(name);
 	afterLoad(name, null);
+}
+
+// A .docx is read as BYTES and converted, never as text. The conversion
+// happens off the critical path: the pane shows the name immediately and the
+// document swaps in when the ZIP has been walked, so a large file does not
+// leave the window blank.
+async function loadDocx(handle, name, path) {
+	loadAsset(handle, name, 'docx', null);
+	try {
+		const bytes = await g.nfs.readFile(path);
+		g.docFragment = docxToFragment(bytes, window.nmdv_node.zlib);
+		if (g.fileName !== name) return;              // the user moved on
+		renderView();
+	} catch (err) {
+		status(`Cannot read ${name}: ${err.message}`);
+	}
 }
 
 // Toolbar state is a function of the KIND, not of which file was picked.
@@ -891,7 +931,6 @@ function renderAsset() {
 		ed.setAttribute('data-lang', langOf(g.fileName) || 'txt');
 		ed.setAttribute('aria-label', g.fileName);
 		wrap.appendChild(ed);
-
 	} else if (g.docKind === 'html') {
 		// Sandboxed, and deliberately WITHOUT allow-same-origin. This window
 		// runs nodeIntegration, so injecting the file into our own document
@@ -903,6 +942,36 @@ function renderAsset() {
 		frame.setAttribute('referrerpolicy', 'no-referrer');
 		frame.src = src;
 		wrap.appendChild(frame);
+
+	} else if (g.docKind === 'pdf') {
+		// The real viewer is the window that just opened; this pane says so
+		// and offers the button again in case it was closed.
+		wrap.innerHTML = `
+			<div class="asset-card asset-unopenable">
+				<nui-icon name="description"></nui-icon>
+				<p class="asset-name"></p>
+				<p class="asset-note">Opened in its own window, with the built-in PDF viewer.</p>
+			</div>`;
+		wrap.querySelector('.asset-name').textContent = g.fileName;
+		wrap.querySelector('.asset-unopenable')
+			.insertAdjacentHTML('beforeend',
+				'<nui-button><button type="button">Open again</button></nui-button>');
+		wrap.querySelector('button').addEventListener('click', async () => {
+			try {
+				await window.nmdv_node.ipcRenderer.invoke('open-pdf-window', g.fileHandle._nmdvPath);
+			} catch (err) {
+				status(`Cannot open ${g.fileName}: ${err.message}`);
+			}
+		});
+
+	} else if (g.docKind === 'docx') {
+		// Our own nodes, built with createTextNode — never innerHTML over
+		// document.xml, which is untrusted input from disk.
+		wrap.classList.add('asset-docx');
+		if (g.docFragment) wrap.appendChild(g.docFragment);
+		else {
+			wrap.innerHTML = '<p class="asset-note">Reading document…</p>';
+		}
 
 	} else if (g.docKind === 'unsupported') {
 		wrap.innerHTML = `
@@ -940,13 +1009,23 @@ function renderAsset() {
 	// while we waited for the definition.
 	if (g.docKind === 'text') {
 		const ed = wrap.querySelector('nui-code-editor');
+		const lang = langOf(g.fileName);
+		// The component's own highlighter owns the five dialects it ships.
+		// For anything else it emits escaped plain text, so the app-side
+		// highlighter fills the gap — with the same hl-* classes, so one
+		// stylesheet covers both.
+		const appHighlighted = NUI_LANGS.has(lang) ? null : highlightCode(g.markdown, lang);
 		customElements.whenDefined('nui-code-editor').then(() => {
 			if (!ed.isConnected) return;
 			ed.value = g.markdown;
+			const input = ed.querySelector('.nui-code-editor-input');
 			// nui-code-editor is contenteditable by design and has no
 			// read-only switch; a file opened for VIEWING must not invite
 			// edits that go nowhere.
-			ed.querySelector('.nui-code-editor-input')?.setAttribute('contenteditable', 'false');
+			input?.setAttribute('contenteditable', 'false');
+			if (appHighlighted !== null && input) {
+				input.innerHTML = appHighlighted + (g.markdown.endsWith('\n') ? '<br>' : '');
+			}
 		});
 	}
 }

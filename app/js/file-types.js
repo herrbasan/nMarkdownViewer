@@ -14,15 +14,20 @@ const IMAGE = new Set(['.png', '.jpg', '.jpeg', '.jfif', '.gif', '.webp', '.avif
 const VIDEO = new Set(['.mp4', '.webm', '.ogv', '.mov', '.m4v', '.mkv']);
 const AUDIO = new Set(['.mp3', '.wav', '.ogg', '.oga', '.flac', '.m4a', '.aac', '.opus']);
 
-// Read-only text. `lang` is NUI's highlighter dialect, which knows exactly
-// five languages; everything else stays escaped plain text rather than
-// mis-coloured. Empty string = no highlighting.
+// Read-only text. `lang` is the highlighter dialect: the five NUI ships
+// (html/xml, css, js, ts, json) plus the ones app/js/highlight.js adds.
+// Everything else stays escaped plain text rather than mis-coloured.
 const TEXT = {
 	'.txt': '', '.log': '', '.csv': '', '.tsv': '', '.env': '', '.lock': '',
-	'.yml': '', '.yaml': '', '.toml': '', '.ini': '', '.cfg': '', '.conf': '',
-	'.py': '', '.rb': '', '.go': '', '.rs': '', '.java': '', '.kt': '', '.swift': '',
-	'.c': '', '.h': '', '.cpp': '', '.hpp': '', '.cs': '', '.php': '', '.pl': '',
-	'.sh': '', '.bash': '', '.ps1': '', '.bat': '', '.cmd': '', '.sql': '',
+	'.yml': 'yaml', '.yaml': 'yaml', '.toml': 'ini', '.ini': 'ini', '.cfg': 'ini', '.conf': 'ini', '.properties': 'ini',
+	'.rb': 'ruby', '.go': 'go', '.rs': 'rust', '.kt': 'kotlin', '.swift': '',
+	'.c': 'c', '.h': 'c', '.cpp': 'cpp', '.hpp': 'cpp', '.cc': 'cpp',
+	'.cs': 'cs', '.php': 'php', '.py': 'py', '.sh': 'sh', '.bash': 'sh', '.zsh': 'sh', '.ps1': 'ps1',
+	'.sql': 'sql', '.diff': 'diff', '.patch': 'diff',
+	'.md': '', '.markdown': '',
+	// JSON Lines: one object per line. Not valid JSON as a whole, but every
+	// value is, and the token rules are per-value.
+	'.jsonl': 'json', '.ndjson': 'json',
 	'.json': 'json', '.jsonc': 'json',
 	'.js': 'js', '.mjs': 'js', '.cjs': 'js', '.jsx': 'js',
 	'.ts': 'ts', '.tsx': 'ts',
@@ -30,8 +35,13 @@ const TEXT = {
 	'.editorconfig': '', '.npmrc': '', '.gitignore': ''
 };
 
-// HTML and XML are rendered, not shown as source — but never in this window's
-// own document; see the iframe note in renderAsset().
+// Chromium renders a PDF through an internal viewer that will not run inside
+// an iframe, so a PDF is a WINDOW (main.js), not a view. A .docx is unpacked
+// and converted. Legacy .doc is a binary OLE2 compound file — there is no
+// honest way to render it without a converter, so it stays `null` and the OS
+// (i.e. Word) opens it, which is the right answer anyway.
+const PDF = new Set(['.pdf']);
+const DOCX = new Set(['.docx']);
 const MARKUP = new Set(['.html', '.htm', '.xhtml', '.xml']);
 
 function extOf(name) {
@@ -39,7 +49,7 @@ function extOf(name) {
 	return i <= 0 ? '' : String(name).slice(i).toLowerCase();
 }
 
-// 'markdown' | 'image' | 'video' | 'audio' | 'text' | 'html' | null
+// 'markdown' | 'image' | 'video' | 'audio' | 'text' | 'html' | 'pdf' | 'docx' | null
 export function kindOf(name) {
 	const ext = extOf(name);
 	if (ext === '.md' || ext === '.markdown') return 'markdown';
@@ -48,8 +58,15 @@ export function kindOf(name) {
 	if (VIDEO.has(ext)) return 'video';
 	if (AUDIO.has(ext)) return 'audio';
 	if (ext in TEXT) return 'text';
+	if (PDF.has(ext)) return 'pdf';
+	if (DOCX.has(ext)) return 'docx';
 	return null;
 }
+
+// The dialects NUI's own highlighter owns. Anything else that has a dialect
+// is app-side (see app/js/highlight.js) — splitting it here keeps the
+// component from being handed a language it would silently render as plain.
+export const NUI_LANGS = new Set(['html', 'xml', 'css', 'js', 'javascript', 'ts', 'typescript', 'json', 'txt', '']);
 
 // The highlighter dialect for a text file, or '' for plain.
 export function langOf(name) {
