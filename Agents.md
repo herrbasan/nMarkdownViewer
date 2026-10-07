@@ -5,16 +5,16 @@
 Desktop Markdown viewer/editor with integrated text-to-speech.
 
 - **View** `.md` files rendered via NUI `nui-markdown`
-- **Edit** WYSIWYG via NUI `nui-rich-text`, saved back as Markdown
+- **Edit** via the NUI `nui-blocks-editor` (structure-aware: sections, blocks,
+  columns, vars, frontmatter), saved back as Markdown
 - **Listen** to documents via nSpeech TTS over the LAN
-- **OS integration** via Electron shell (built last): double-click a `.md` file opens the viewer
+- **OS integration** via Electron shell: double-click a `.md` file opens the viewer
 
 ## Current Phase
 
-**Browser-first development (M1 done).** Electron does not exist yet and must
-not be created before M5 — see [docs/nMarkdownViewer_SPEC.md](docs/nMarkdownViewer_SPEC.md)
-for the full spec, milestone plan, and decision log. The spec doubles as the
-development plan; keep it current as decisions are made.
+**v0.4.0 released — blocks editor live in both shells.** See
+[docs/nMarkdownViewer_SPEC.md](docs/nMarkdownViewer_SPEC.md) for the spec,
+milestone plan, and decision log. Keep it current as decisions are made.
 
 ## Run
 
@@ -59,9 +59,9 @@ app/
   js/tts.js             TTS config pane + playback controller
   js/prefs.js           persistent prefs (Electron: userData/prefs.json; browser: localStorage)
   js/lib/nspeech-client.js   vendored nSpeech SDK (SpeechPlayer) — from LLM-Gateway-Chat lib/tts
-  js/md-serializer.js   HTML → Markdown (ours, highest-risk module)
-  modules/nui_wc2/      NUI submodule (read-only; upstream work on branches)
-  modules/electron_helper/   Electron IPC helper submodule (M5)
+  js/md-serializer.js   HTML → Markdown (legacy rich-text path; unused since v0.4.0)
+  modules/nui_wc2/      NUI submodule (ours — enhanced as upstream, pointer bumped)
+  modules/electron_helper/   Electron IPC helper submodule
 config.json             nSpeech endpoint, voice, chunk size
 docs/nMarkdownViewer_SPEC.md   spec + dev plan (authoritative)
 scripts/serve.js        zero-dep static dev server
@@ -82,8 +82,8 @@ pushed `master`; refuses if the tag exists).
 
 ## Known Risk Areas
 
-- **md-serializer round-trip fidelity** — `htmlToMarkdown(markdownToHtml(md))`
-  must be stable for the NUI markdown subset. M2 adds a fixture corpus.
+- **md-serializer round-trip fidelity** — retired with the rich-text editor
+  (v0.4.0); `app/js/md-serializer.js` remains unused. Delete when confident.
 - **nui markdownToHtml XSS caveat** (no URL scheme validation) — fine for local
   files, revisit before ever rendering untrusted content.
 - **nSpeech port/CORS** — see Open Questions in the spec.
@@ -97,7 +97,7 @@ identically because there is only one answer to ask.
 
 | kind | extensions | chrome |
 |------|-----------|--------|
-| `markdown` | `.md` `.markdown` | `nui-markdown`, the WYSIWYG editor stays available |
+| `markdown` | `.md` `.markdown` | `nui-markdown`; Edit opens the blocks editor |
 | `image` | png jpg gif webp avif bmp ico svg | fills the pane, `object-fit: contain` |
 | `video` | mp4 webm ogv mov m4v mkv | fills the pane, `object-fit: contain` |
 | `audio` | mp3 wav ogg oga flac m4a aac opus | card at 40rem — no picture, so width would be dead space |
@@ -255,6 +255,37 @@ viewer itself uses, so a linked `.png` opens the way a dropped `.png` does.
 - **Drag & drop in Electron: `File.path` is gone** (removed in modern Electron). Use `webUtils.getPathForFile(file)` — exposed on the `nmdv_node` bridge in [app/index.html](app/index.html). Dropped folders arrive as `File` entries too; `fsp.stat` decides file vs. directory.
 - **`fetch()` over `raum://` is CORS-blocked** from a `file://` origin. Media elements are fine (they load via `src`, not `fetch`), but don't reach for `fetch` to read an asset back — read the file with `nfs` instead.
 - **A custom element's `value` setter can run before its DOM exists.** `nui-code-editor` builds its children in `connectedCallback`; assigning `.value` first throws `Cannot set properties of undefined (setting 'innerHTML')` at `renderBlock`. Append, *then* assign.
+
+## Edit Lifecycle (v0.4.0 policy — do not re-complicate)
+
+- **The file on disk is the only source of truth for the viewer.** `g.markdown`
+  only changes on Save or document load — never on entering/leaving edit mode.
+- **Leaving edit mode discards, silently.** Switching documents discards.
+  Closing the window discards. No dialogs anywhere.
+- **Save serializes the LIVE editor** (`g.blocksEditor.serialize()`), never
+  through the discard path — and Save keeps the editor open (Save ≠ Exit).
+- **The dirty flag is vestigial.** It gates the title dot only; it must never
+  prompt or block anything.
+- **`load()` must not emit `nui-change`.** Loading a document is not editing
+  it — upstream blocks-editor contract (nui_wc2 ded294a).
+- **`nui-select` fires `nui-change` on same-value `setValue()`.** Any change
+  handler that repaints must early-return on `val === current`, or repaint →
+  setValue → change recurses to stack overflow (nui_wc2 d7f0a1b).
+- **Media paths resolve through one seam** — `mintMarkdownMediaUrls` +
+  `mediaUrlMap` + the sync rewrite hook for the viewer; `resolveThumb` for the
+  editor. Relative paths join the doc dir (split on `/` AND `\`); drive/UNC
+  paths resolve verbatim; no doc path → hard-fail (never mint a driveless
+  `raum://` URL — its fallback lands on the app's own drive).
+- **Absolute media srcs in documents** are refused by nui-markdown's trust
+  boundary; the desktop shell vouches via `nui.util.setMarkdownMediaTrust`
+  (drive paths → `raum:///` form). Web-served docs keep the strict boundary.
+- **The blocks editor's media hooks are the integration contract**:
+  `element.openMediaLibrary` (pick) and `element.resolveThumb` (thumb/frame/
+  player URL, null = icon tile). Both are upstream upstream additions — keep
+  the Playground mock as default, hosts override.
+- **Electron `window.open` needs an explicit allowance.** The navigation
+  guard denies everything; the editor's about:blank preview popup is allowed
+  with the helper preload (main.js `installNavigationGuards`).
 
 ## File Association Pattern (M5, for the next major release)
 

@@ -3,9 +3,9 @@
 ## Vision
 
 A desktop Markdown viewer/editor: double-click a `.md` file → it opens rendered,
-switchable between faithful rendering (NUI `nui-markdown`) and WYSIWYG editing
-(NUI `nui-rich-text`), with one-click text-to-speech of the document via a
-LAN-hosted nSpeech instance.
+switchable between faithful rendering (NUI `nui-markdown`) and structure-aware
+editing (NUI `nui-blocks-editor` — sections, blocks, columns, vars, frontmatter),
+with one-click text-to-speech of the document via a LAN-hosted nSpeech instance.
 
 ## Architecture
 
@@ -36,9 +36,9 @@ Principles (inherited from Prime Directive):
   in the status bar.
 - **The stage owns all logic.** The Electron main process is a shell: window,
   file association, argv handoff. Everything else lives in `app/js/`.
-- **Markdown source is the single source of truth.** Rendering is derived;
-  editing is a round-trip `md → HTML → md`. The document model is the text,
-  never the DOM.
+- **Markdown source is the single source of truth.** Rendering is derived; the
+  document model is the text, never the DOM. Nothing is stored without Save —
+  the unsaved-changes policy is discard, everywhere, silently.
 
 ## Components & Integration Points
 
@@ -47,10 +47,10 @@ Principles (inherited from Prime Directive):
 | Piece | Role | Notes |
 |---|---|---|
 | `NUI/nui.js` | core | side-effect import; registers `window.nui`, all core components incl. `nui-markdown` |
-| `nui-markdown` | viewer | core component. Renders once on connect (`_processed` guard) — **swap in a fresh element per render**, never mutate a connected one |
-| `nui.util.markdownToHtml` | md → HTML | used for edit-mode entry and plaintext extraction |
-| `nui.util.parseFrontmatter` | YAML block | `{ raw, data, content }`; `raw` includes the `---` fences and is re-prepended verbatim on save |
-| `nui-rich-text` | editor | **addon**: JS import + CSS link both required. HTML contenteditable; `value` getter/setter is HTML. Auto-converts pasted Markdown to HTML |
+| `nui-markdown` | viewer | core component. Renders once on connect (`_processed` guard) — **swap in a fresh element per render**, never mutate a connected one. Relative media srcs pre-resolve via `mintMarkdownMediaUrls` + the sync `setMarkdownImageRewrite` hook; drive paths vouched via `setMarkdownMediaTrust` |
+| `nui-blocks-editor` | editor | **addon** (v0.4.0). Host hooks: `openMediaLibrary` (pick → `[{src,label}]`), `resolveThumb` (src → URL or null → icon tile). `load(md)` is silent (no `nui-change`); `serialize()` is the whole output. Never mutate `g.markdown` outside Save |
+| `nui.util.parseFrontmatter` | YAML block | `{ raw, data, content }` — used by the blocks editor's frontmatter card |
+| `nui-rich-text` | (legacy) | retired from the edit path in v0.4.0; still used *inside* the blocks editor for prose blocks |
 
 ### nSpeech (LAN service)
 
@@ -86,22 +86,15 @@ tree root therefore needs one explicit folder pick in the browser phase.
 Double-click → tree rooted at the file's folder only becomes automatic
 with the Electron shell.
 
-### Editor round-trip (the risk area)
+### Editor (v0.4.0 — blocks editor)
 
-`nui-rich-text` edits **HTML**, not Markdown. Loading is trivial
-(`markdownToHtml`, or the editor's own `markdown` setter). Saving needs
-HTML→Markdown. **NUI ships an experimental one**: the editor's `markdown`
-getter (`_htmlToMarkdown`, demo page flags the component as experimental).
-`app/js/md-serializer.js` is our more thorough implementation (escaping,
-nested lists, tables, blockquotes). **M3 decides** which one survives,
-based on the M2 fixture corpus: `htmlToMarkdown(markdownToHtml(md))`
-must be semantically stable for the NUI markdown subset: headings,
-bold/italic/strike, underline (`<u>` kept as HTML — no Markdown
-equivalent), lists (nested, ordered/unordered, loose/tight), blockquotes,
-fenced + inline code, tables, links, images, hr, br.
-
-YAML frontmatter never enters the editor: it is split off with
-`parseFrontmatter`, held as raw text, and re-prepended verbatim on apply.
+The edit path is `nui-blocks-editor` (upstream nui_wc2 addon). The document
+model is spec-shaped (sections/blocks/columns/vars/frontmatter); plain
+Markdown is legal MD-Blocks, so every viewable document is editable. Host
+integration is two hooks plus load/serialize — the editor never fetches or
+persists. Legacy `md-serializer.js` (the `md → HTML → md` round-trip) is
+retired from the path; the fixture-corpus milestone (M2.5) is superseded by
+it and closed.
 
 ### File access
 
@@ -150,11 +143,12 @@ YAML frontmatter never enters the editor: it is split off with
   bottom of the content area (chat's TtsPlayerHost): timeline scrubbing,
   buffered-lane display while generating, download of the generated MP3
   (named after the document).
-- [ ] **M2.5 — Round-trip fixtures.** Test corpus covering the full syntax
-  subset, frontmatter handling verified, XSS caveat decision, built-in
-  `editor.markdown` vs. our md-serializer bake-off.
-- [ ] **M3 — Editor.** md-serializer correctness against the fixture corpus,
-  dirty-state UX, save-as, keyboard shortcuts (Ctrl+S, Ctrl+E).
+- [x] **M2.5 — Round-trip fixtures.** SUPERSEDED 2026-10-07: the rich-text
+  round-trip (the reason the corpus existed) was replaced by the blocks editor.
+- [x] **M3 — Editor.** DELIVERED AS THE BLOCKS EDITOR (v0.4.0):
+  structure-aware sections/blocks/columns/vars/frontmatter, media picking with
+  path resolution, dirty-state = none (discard policy), keyboard shortcuts
+  (Ctrl+S, Ctrl+E), save-as via picker fallback.
 - [ ] **M4 — TTS polish.** Chunk progress details in status bar (SpeechPlayer
   already streams + pauses), listen-from-position, engine-switch messaging.
   RESOLVED 2026-09-07: the `worker_error` 500s were **client-side** — nSpeech
@@ -210,4 +204,9 @@ YAML frontmatter never enters the editor: it is split off with
 | 2026-09-07 | Config pane lists local engines only (nspeech sentinel + resident gpu:false) | Cloud engines are paid API calls — excluded from a local document viewer unless explicitly requested. Engine switching stays in the nSpeech dashboard |
 | 2026-09-07 | nSpeech v3 server-side `clean` + auto-chunking replaces client-side text extraction/chunking | Server is authoritative (regex clean, transparent long-form stitching) — less client code, single source of cleaning rules |
 | 2026-09-07 | Docked TtsPlayerHost (vendored from chat) as THE audio transport | One player chrome for scrub + download; status bar stays text-only. Controller interface = SpeechPlayer subset, no adapter needed |
-| 2026-09-07 | Cloud engines listed in the pane (user decision) | Selecting a cloud engine + Listen is the user's explicit paid action — same model as the chat |
+| 2026-10-07 | Blocks editor replaces the rich-text round-trip | Structure-aware editing was the goal all along; the editor's document model is spec-shaped and `serialize()` output is legal MD-Blocks by construction |
+| 2026-10-07 | Media picking = host hook (`openMediaLibrary`), not a built-in library | Every host has a different file story (OS dialog, FS Access, CMS); the Playground keeps the demo library as default |
+| 2026-10-07 | Thumbnails resolve via a host hook too (`resolveThumb`) | Local-file hosts mint blob/`raum://` URLs; hosts without cheap thumbs decline and get icon tiles |
+| 2026-10-07 | Unsaved-changes policy: discard everywhere, silently | User decision — "If you don't save and you leave edit mode nothing is stored, changes discarded." No dialogs; the file on disk is the only truth until Save |
+| 2026-10-07 | Edit mode is modal (tree hidden, breakout width) | Editing wants the whole container; the layout engine's own `breakout` + the shell's sidebar state do it — no app CSS fights the components |
+| 2026-10-07 | Absolute media paths vouched via `setMarkdownMediaTrust` | A desktop shell renders the user's own disk; a drive path is a picked file, not an injection. Web-served docs keep the strict §8 boundary |
