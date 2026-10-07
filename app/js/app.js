@@ -984,7 +984,8 @@ const MEDIA_EXT = /\.(?:webp|png|jpe?g|gif|svg|avif|bmp|ico|mp3|wav|ogg|oga|flac
 async function mintMarkdownMediaUrls() {
 	g.mediaUrlMap = new Map();
 	const docPath = g.fileHandle?._nmdvPath || '';
-	const dir = docPath.split('/').slice(0, -1).filter(Boolean);
+	// Electron paths are backslashed — split on both separators.
+	const dir = docPath.split(/[\\/]/).slice(0, -1).filter(Boolean);
 	const dests = new Set();
 	for (const m of g.markdown.matchAll(/\]\(([^)\s]+)\)/g)) {
 		const dest = m[1];
@@ -993,7 +994,7 @@ async function mintMarkdownMediaUrls() {
 	await Promise.all([...dests].map(async (dest) => {
 		try {
 			const [clean] = dest.split(/[?#]/);
-			const path = [...dir, ...clean.split('/').filter(Boolean)].join('/');
+			const path = [...dir, ...clean.split(/[\\/]/).filter(Boolean)].join('/');
 			const handle = await g.fs.readFileHandle(path);
 			handle._nmdvPath = path;
 			g.mediaUrlMap.set(dest, await g.fs.assetUrl(path, handle));
@@ -1163,9 +1164,9 @@ function enterEdit() {
 		if (!g.fs) return null;
 		try {
 			const docPath = g.fileHandle?._nmdvPath || '';
-			const dir = docPath.split('/').slice(0, -1).filter(Boolean);
+			const dir = docPath.split(/[\\/]/).slice(0, -1).filter(Boolean);
 			const [clean] = src.split(/[?#]/);
-			const path = [...dir, ...clean.split('/').filter(Boolean)].join('/');
+			const path = [...dir, ...clean.split(/[\\/]/).filter(Boolean)].join('/');
 			const handle = await g.fs.readFileHandle(path);
 			handle._nmdvPath = path;
 			return g.fs.assetUrl(path, handle);
