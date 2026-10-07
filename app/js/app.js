@@ -85,8 +85,8 @@ async function boot() {
 		return true;
 	});
 
-	el['btn-open-folder'].addEventListener('click', openFolder);
-	el['btn-open-file'].addEventListener('click', openFile);
+	el['btn-open-folder'].addEventListener('click', () => openFolder().catch(reportOpenError('folder')));
+	el['btn-open-file'].addEventListener('click', () => openFile().catch(reportOpenError('file')));
 	el['btn-startup-choose'].addEventListener('click', chooseStartupDir);
 	el['btn-startup-clear'].addEventListener('click', clearStartupDir);
 	el['btn-refresh'].addEventListener('click', () => el['file-tree'].refresh());
@@ -302,6 +302,15 @@ function releaseAssetUrls() {
 	assetUrls = [];
 }
 
+
+// A failed open must never die as an unhandled rejection: the picker is the
+// app's front door, and a silent door reads as a broken app.
+function reportOpenError(what) {
+	return (err) => {
+		status(`Open ${what} failed: ${err.message || err}`);
+		throw err;
+	};
+}
 
 async function openFolder() {
 	if (!await confirmDiscard()) return;
