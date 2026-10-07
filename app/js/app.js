@@ -984,8 +984,12 @@ const MEDIA_EXT = /\.(?:webp|png|jpe?g|gif|svg|avif|bmp|ico|mp3|wav|ogg|oga|flac
 async function mintMarkdownMediaUrls() {
 	g.mediaUrlMap = new Map();
 	const docPath = g.fileHandle?._nmdvPath || '';
-	// Electron paths are backslashed — split on both separators.
+	// Electron paths are backslashed — split on both separators. A doc without
+	// a directory (e.g. picked straight from a dialog) has no base for
+	// relative srcs: leave the map empty — nui-markdown renders its broken
+	// marker, which names the file, instead of a URL that points nowhere.
 	const dir = docPath.split(/[\\/]/).slice(0, -1).filter(Boolean);
+	if (!dir.length) return;
 	const dests = new Set();
 	for (const m of g.markdown.matchAll(/\]\(([^)\s]+)\)/g)) {
 		const dest = m[1];
@@ -1162,9 +1166,13 @@ function enterEdit() {
 	ed.resolveThumb = async (src) => {
 		if (/^(https?|data|blob|raum|file):/i.test(src)) return src;
 		if (!g.fs) return null;
+		// No doc dir → no base for a relative src. Decline: the editor shows
+		// its file-icon tile, and a driveless raum URL (which would resolve
+		// onto the APP's drive) is never minted.
+		const docPath = g.fileHandle?._nmdvPath || '';
+		const dir = docPath.split(/[\\/]/).slice(0, -1).filter(Boolean);
+		if (!dir.length) return null;
 		try {
-			const docPath = g.fileHandle?._nmdvPath || '';
-			const dir = docPath.split(/[\\/]/).slice(0, -1).filter(Boolean);
 			const [clean] = src.split(/[?#]/);
 			const path = [...dir, ...clean.split(/[\\/]/).filter(Boolean)].join('/');
 			const handle = await g.fs.readFileHandle(path);
