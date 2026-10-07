@@ -738,7 +738,9 @@ function afterLoad(name, charCount) {
 
 async function writeFile() {
 	if (!g.markdown && !g.fileHandle) return;
-	if (g.mode === 'edit') applyEdit();
+	// Saving is the ONE place editor edits persist: serialize the live editor
+	// straight into what gets written (never through g.markdown — exit discards).
+	if (g.blocksEditor) g.markdown = g.blocksEditor.serialize();
 	if (!g.fileHandle) {
 		try {
 			g.fileHandle = await window.showSaveFilePicker({
