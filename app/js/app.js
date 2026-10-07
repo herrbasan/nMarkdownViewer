@@ -1194,18 +1194,23 @@ function enterEdit() {
 function applyEdit() {
 	const ed = g.blocksEditor;
 	if (!ed) { setMode('view'); return; }
-	g.markdown = ed.serialize();
+	const md = ed.serialize();
 	ed.destroy();
 	g.editWrap?.remove();
 	g.editWrap = null;
 	g.blocksEditor = null;
-	if (!g.dirty) {
+	// Dirty only when the serialized document actually differs from what was
+	// loaded — entering the editor and backing out is not an edit.
+	if (md !== g.markdown) {
+		g.markdown = md;
 		g.dirty = true;
 		setTitle(g.fileName);
+		status('Edits applied (unsaved)');
+	} else {
+		status('No changes');
 	}
 	setMode('view');
 	renderView();
-	status('Edits applied (unsaved)');
 }
 
 // ################################# MEDIA PICKER (host side of nui-blocks-editor)
