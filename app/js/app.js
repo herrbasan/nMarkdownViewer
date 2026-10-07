@@ -897,7 +897,12 @@ function setMode(mode) {
 	// viewer is what gets tucked away.
 	const viewer = document.getElementById('viewer');
 	if (viewer && viewer !== g.blocksEditor) viewer.hidden = editing;
-	if (g.blocksEditor) g.blocksEditor.hidden = !editing;
+	if (g.blocksEditor) {
+		g.blocksEditor.hidden = !editing;
+		// The theme's breakout attribute lifts the page's max-width constraint
+		// on this child — the modal editor uses the width the tree gave back.
+		g.blocksEditor.toggleAttribute('breakout', editing);
+	}
 	// Save only exists in edit mode — there's nothing to save otherwise
 	el['btn-save'].hidden = !editing;
 	el['btn-edit'].classList.toggle('editing', mode === 'edit');
