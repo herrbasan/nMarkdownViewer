@@ -105,6 +105,14 @@ async function boot() {
 	// renderMarkdown() filled before handing over the markdown. Unmapped URLs
 	// (external, already-minted) pass through untouched.
 	nui.util.setMarkdownImageRewrite((url) => g.mediaUrlMap?.get(url) ?? url);
+	// Desktop trust override: this shell renders the user's own documents from
+	// the user's own disk, so a drive path in a document is a file reference,
+	// not an injection. Vouched destinations are rewritten to raum:/// form —
+	// the same URL shape the fs adapter produces.
+	nui.util.setMarkdownMediaTrust((dest) => {
+		const m = dest.match(/^([a-zA-Z]):[\\/](.*)$/);
+		return m ? `raum:///${m[1]}:/${m[2].replace(/\\/g, '/')}` : null;
+	});
 
 	el['file-tree'].addEventListener('nui-file-select', (e) => onTreeFile(e.detail.entry));
 	el['file-tree'].addEventListener('nui-tree-error', (e) => status(`Cannot read ${e.detail.entry.path}: ${e.detail.error}`));
