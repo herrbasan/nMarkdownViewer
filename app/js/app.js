@@ -132,11 +132,12 @@ async function boot() {
 	// consume its drop event — detail.originalEvent is the native drop event.
 	el['dropzone'].addEventListener('nui-dropzone-drop', (e) => onDrop(e.detail.originalEvent));
 
-	// Closing the window discards unsaved edits — silent by design (David):
-	// a confirm dialog on close is friction the file system backup already
-	// covers. beforeunload is still prevented so Electron defers to this
-	// policy instead of showing its own prompt.
-	window.addEventListener('beforeunload', (e) => { if (g.dirty) e.preventDefault(); });
+	// The unsaved-changes policy is DISCARD, everywhere, silently: leaving
+	// edit mode throws edits away, switching documents throws them away,
+	// closing the window throws them away. Nothing is stored unless Save is
+	// pressed. (David: "If you dont save and you leave edit mode nothing is
+	// stored, changes discarded.") No dialogs anywhere.
+	window.addEventListener('beforeunload', () => { /* discard silently */ });
 	window.addEventListener('keydown', (e) => {
 		if (e.ctrlKey && e.key === 's') { e.preventDefault(); writeFile(); }
 		if (e.ctrlKey && e.key === 'e') { e.preventDefault(); if (g.markdown) toggleEdit(); }
@@ -598,14 +599,11 @@ async function onDrop(e) {
 	selectInTree(file.name);
 }
 
-// Returns true when it is safe to replace the current document.
-async function confirmDiscard() {
-	if (!g.dirty) return true;
-	if (g.mode === 'edit') applyEdit(); // serialize pending edits before deciding
-	return await nui.components.dialog.confirm(
-		'Unsaved changes',
-		`"${g.fileName}" has unsaved changes. Discard them?`
-	);
+// The unsaved-changes policy is DISCARD, silently, everywhere. This former
+// confirm dialog is now a no-op kept for its call sites — switching documents
+// just proceeds. Edits die when edit mode is left without Save.
+function confirmDiscard() {
+	return true;
 }
 
 // ################################# DOCUMENT
