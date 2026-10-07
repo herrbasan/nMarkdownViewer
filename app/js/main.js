@@ -111,6 +111,12 @@ function installNavigationGuards(win) {
 		if (/^(https?|mailto):/i.test(url)) shell.openExternal(url);
 	});
 	win.webContents.setWindowOpenHandler(({ url }) => {
+		// The blocks editor's "Own Window" preview opens an about:blank popup
+		// and writes into it from the renderer — that one is ours. Everything
+		// else keeps the OS handoff.
+		if (url === 'about:blank') return { action: 'allow', overrideBrowserWindowOptions: {
+			webPreferences: { preload: path.join(__dirname, '../modules/electron_helper/helper_new.js') }
+		} };
 		if (/^(https?|mailto):/i.test(url)) shell.openExternal(url);
 		return { action: 'deny' };
 	});
