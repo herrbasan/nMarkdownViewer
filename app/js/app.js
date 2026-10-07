@@ -124,6 +124,10 @@ async function boot() {
 	// consume its drop event — detail.originalEvent is the native drop event.
 	el['dropzone'].addEventListener('nui-dropzone-drop', (e) => onDrop(e.detail.originalEvent));
 
+	// Closing the window discards unsaved edits — silent by design (David):
+	// a confirm dialog on close is friction the file system backup already
+	// covers. beforeunload is still prevented so Electron defers to this
+	// policy instead of showing its own prompt.
 	window.addEventListener('beforeunload', (e) => { if (g.dirty) e.preventDefault(); });
 	window.addEventListener('keydown', (e) => {
 		if (e.ctrlKey && e.key === 's') { e.preventDefault(); writeFile(); }
