@@ -1222,16 +1222,13 @@ function applyEdit() {
 	g.editWrap?.remove();
 	g.editWrap = null;
 	g.blocksEditor = null;
-	// Dirty only when the serialized document actually differs from what was
-	// loaded — entering the editor and backing out is not an edit.
-	if (md !== g.markdown) {
-		g.markdown = md;
-		g.dirty = true;
-		setTitle(g.fileName);
-		status('Edits applied (unsaved)');
-	} else {
-		status('No changes');
-	}
+	// Leaving edit mode NEVER mutates the loaded document — the file on disk
+	// is the only source of truth until Save is pressed (David: "it should
+	// not affect the loaded md when nothing is saved"). The view re-renders
+	// from g.markdown, which is still the file content. The editor's edits
+	// are simply discarded.
+	g.dirty = false;
+	status(md !== g.markdown ? 'Edits discarded (not saved)' : 'No changes');
 	setMode('view');
 	renderView();
 }
