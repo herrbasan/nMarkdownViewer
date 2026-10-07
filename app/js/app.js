@@ -7,8 +7,7 @@
 import '../modules/nui_wc2/NUI/nui.js';
 import { appWindow } from '../modules/nui_wc2/NUI/lib/modules/nui-app-window.js';
 import '../modules/nui_wc2/NUI/lib/modules/nui-file-tree.js';
-import '../modules/nui_wc2/NUI/lib/modules/nui-rich-text.js';
-import { htmlToMarkdown } from './md-serializer.js';
+import '../modules/nui_wc2/NUI/lib/modules/nui-blocks-editor.js';
 import { createTts } from './tts.js';
 import { prefs } from './prefs.js';
 import { TtsPlayerHost } from './lib/tts-player.js';
@@ -30,7 +29,7 @@ const g = {
 	docFragment: null,    // converted .docx nodes
 	pdfView: null,        // live pdf.js view, so it can be torn down
 	markdown: '',
-	frontmatterRaw: null, // fenced YAML block preserved across edit round-trips
+	blocksEditor: null,   // live <nui-blocks-editor>, present only in edit mode
 	dirty: false,
 	mode: 'view',         // 'view' | 'edit'
 	tts: null             // config-pane controller (js/tts.js), set in boot
@@ -582,7 +581,7 @@ function loadDocument(handle, name, text, kind = 'markdown') {
 	g.assetUrl = null;
 	g.docFragment = null;
 	g.markdown = text;
-	g.frontmatterRaw = null;
+	g.blocksEditor = null;
 	g.dirty = false;
 	setMode('view');
 	renderView();
@@ -608,7 +607,7 @@ function loadAsset(handle, name, kind, url) {
 	g.assetUrl = url;
 	g.docFragment = null;
 	g.markdown = '';
-	g.frontmatterRaw = null;
+	g.blocksEditor = null;
 	g.dirty = false;
 	setMode('view');
 	renderView();
@@ -635,7 +634,7 @@ function loadUnsupported(handle, name, path) {
 	g.assetUrl = null;
 	g.docFragment = null;
 	g.markdown = '';
-	g.frontmatterRaw = null;
+	g.blocksEditor = null;
 	g.dirty = false;
 	setMode('view');
 	renderView();
@@ -880,10 +879,15 @@ function clearHoverUrl() {
 
 function setMode(mode) {
 	g.mode = mode;
-	document.getElementById('md-main').hidden = mode === 'edit';
-	el.editor.hidden = mode !== 'edit';
+	const editing = mode === 'edit';
+	// The blocks editor must sit directly under nui-page (breakout contract),
+	// so it lives INSIDE the page and the main area stays visible; the rendered
+	// viewer is what gets tucked away.
+	const viewer = document.getElementById('viewer');
+	if (viewer && viewer !== g.blocksEditor) viewer.hidden = editing;
+	if (g.blocksEditor) g.blocksEditor.hidden = !editing;
 	// Save only exists in edit mode — there's nothing to save otherwise
-	el['btn-save'].hidden = mode !== 'edit';
+	el['btn-save'].hidden = !editing;
 	el['btn-edit'].classList.toggle('editing', mode === 'edit');
 	el['btn-edit'].querySelector('nui-icon').setAttribute('name', mode === 'edit' ? 'close' : 'edit');
 	el['btn-edit'].querySelector('button').setAttribute('aria-label', mode === 'edit' ? 'Close editor (apply edits)' : 'Edit');
@@ -1053,17 +1057,27 @@ function toggleEdit() {
 }
 
 function enterEdit() {
-	const fm = nui.util.parseFrontmatter(g.markdown);
-	g.frontmatterRaw = fm ? fm.raw : null;
-	const body = fm ? fm.content : g.markdown;
-	el.editor.value = nui.util.markdownToHtml(body, { frontmatter: false });
+	const viewer = document.getElementById('viewer');
+	if (viewer) viewer.hidden = true;
+	// Fresh editor per session: the component renders once from its own state,
+	// and a leftover instance would alias the previous document.
+	const ed = document.createElement('nui-blocks-editor');
+	ed.id = 'blocks-editor';
+	ed.setAttribute('preview', 'hidden');
+	ed.openMediaLibrary = pickMedia;
+	ed.load(g.markdown);
+	g.blocksEditor = ed;
+	el.page.appendChild(ed);
 	setMode('edit');
 }
 
 function applyEdit() {
-	const body = htmlToMarkdown(el.editor.value);
-	g.markdown = g.frontmatterRaw ? g.frontmatterRaw + '\n\n' + body : body;
-	g.frontmatterRaw = null;
+	const ed = g.blocksEditor;
+	if (!ed) { setMode('view'); return; }
+	g.markdown = ed.serialize();
+	ed.destroy();
+	ed.remove();
+	g.blocksEditor = null;
 	if (!g.dirty) {
 		g.dirty = true;
 		setTitle(g.fileName);
@@ -1071,6 +1085,55 @@ function applyEdit() {
 	setMode('view');
 	renderView();
 	status('Edits applied (unsaved)');
+}
+
+// ################################# MEDIA PICKER (host side of nui-blocks-editor)
+
+const MEDIA_FILTERS = {
+	image: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'ico', 'svg'] }],
+	player: [{ name: 'Audio/Video', extensions: ['mp3', 'wav', 'ogg', 'oga', 'flac', 'm4a', 'aac', 'opus', 'mp4', 'webm', 'ogv', 'mov', 'm4v', 'mkv'] }]
+};
+
+// Contract of the editor's openMediaLibrary hook: async ({ multiple, filterType })
+// → [{ src, label }] or [] on cancel. The src we return is written verbatim into
+// the document, so it must be a path that SURVIVES a save: relative to the open
+// document when possible, absolute otherwise.
+async function pickMedia({ multiple = true, filterType = null } = {}) {
+	if (window.electron_helper) {
+		const filters = filterType ? MEDIA_FILTERS[filterType] : [...MEDIA_FILTERS.image, ...MEDIA_FILTERS.player];
+		const result = await electron_helper.dialog.showOpenDialog({
+			title: multiple ? 'Insert Media' : 'Choose Media',
+			properties: multiple ? ['openFile', 'multiSelections'] : ['openFile'],
+			filters
+		});
+		if (result.canceled) return [];
+		return result.filePaths.map(p => ({ src: pathToDocHref(p), label: g.npath.basename(p) }));
+	}
+	// Browser phase: FS Access handles. Blob URLs are session-only — they die
+	// with the page and the saved markdown would reference nothing. Say so.
+	let handles;
+	try {
+		handles = await showOpenFilePicker({ multiple });
+	} catch (e) {
+		if (e.name === 'AbortError') return [];
+		throw e;
+	}
+	status('Browser pick: media references are session-only and will not survive a save (path-backed picks need the Electron shell).');
+	return handles.map(f => ({ src: URL.createObjectURL(f), label: f.name }));
+}
+
+// Path relative to the open document's folder (portable in the saved file);
+// falls back to the absolute path when the pick lies outside it.
+function pathToDocHref(p) {
+	const docPath = g.fileHandle?._nmdvPath;
+	const docDir = docPath ? g.npath.dirname(docPath) : g.rootPath;
+	if (docDir) {
+		const rel = g.npath.relative(docDir, p);
+		if (rel && !rel.startsWith('..') && !g.npath.isAbsolute(rel)) {
+			return rel.split(g.npath.sep).join('/');
+		}
+	}
+	return p.replace(/\\/g, '/');
 }
 
 function setTitle(name) {

@@ -43,8 +43,11 @@ with TTS disabled and says so in the status bar.
    - Key rules: every `nui-*` wraps a native element; never style `nui-*`
      components; addons need JS import **and** CSS link; use `data-action`
      for declarative wiring.
-6. **Do not edit inside `app/modules/nui_wc2`** — it's a submodule. NUI bugs
-   get an issue in `herrbasan/nui_wc2`, not a local patch.
+6. **Submodules are ours — edit them as upstream, not as customization.** Fixing or
+   enhancing `nui_wc2` (and the other submodules) happens in the submodule, on a
+   branch, committed upstream — then bump the pointer here. Never fork behavior
+   locally for this app: a change must be generally useful to the component, not
+   a nMarkdownViewer-specific patch.
 
 ## Layout
 
