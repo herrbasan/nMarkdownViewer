@@ -995,6 +995,12 @@ async function mintMarkdownMediaUrls() {
 		const dest = m[1];
 		if (MEDIA_EXT.test(dest) && !/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(dest)) dests.add(dest);
 	}
+	// icon= block attributes (spec §4.2) reference media outside any link —
+	// same resolution, or the badge renders its alt text instead of the art.
+	for (const m of g.markdown.matchAll(/\bicon="?([^"\s\]]+)"?/g)) {
+		const dest = m[1];
+		if (MEDIA_EXT.test(dest) && !/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(dest)) dests.add(dest);
+	}
 	await Promise.all([...dests].map(async (dest) => {
 		try {
 			const [clean] = dest.split(/[?#]/);
