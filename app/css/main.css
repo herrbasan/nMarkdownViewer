@@ -359,6 +359,12 @@ nui-sidebar > nav {
 	flex: none;
 }
 
+/* Edit mode is modal: the editor takes the whole container, tree hidden.
+   display:none (not visibility) so the content column reclaims the space. */
+nui-app.editing nui-sidebar {
+	display: none;
+}
+
 nui-file-tree#file-tree {
 	flex: 1;
 	min-height: 0;

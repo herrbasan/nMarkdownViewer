@@ -889,6 +889,9 @@ function clearHoverUrl() {
 function setMode(mode) {
 	g.mode = mode;
 	const editing = mode === 'edit';
+	// Edit mode is modal: it takes over the whole container, file tree included.
+	// The class lives on the shell so layout stays a stylesheet decision.
+	document.querySelector('nui-app')?.classList.toggle('editing', editing);
 	// The blocks editor must sit directly under nui-page (breakout contract),
 	// so it lives INSIDE the page and the main area stays visible; the rendered
 	// viewer is what gets tucked away.
