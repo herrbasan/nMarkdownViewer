@@ -29,6 +29,7 @@ const g = {
 	docFragment: null,    // converted .docx nodes
 	pdfView: null,        // live pdf.js view, so it can be torn down
 	markdown: '',
+	mediaUrlMap: null,    // relative md media src → minted URL (per document)
 	blocksEditor: null,   // live <nui-blocks-editor>, present only in edit mode
 	dirty: false,
 	mode: 'view',         // 'view' | 'edit'
@@ -100,7 +101,10 @@ async function boot() {
 	el['btn-save'].addEventListener('click', writeFile);
 	el['btn-listen'].addEventListener('click', listen);
 
-	nui.util.setMarkdownImageRewrite(resolveImageUri);
+	// nui-markdown's rewrite hook is synchronous: it consults the map that
+	// renderMarkdown() filled before handing over the markdown. Unmapped URLs
+	// (external, already-minted) pass through untouched.
+	nui.util.setMarkdownImageRewrite((url) => g.mediaUrlMap?.get(url) ?? url);
 
 	el['file-tree'].addEventListener('nui-file-select', (e) => onTreeFile(e.detail.entry));
 	el['file-tree'].addEventListener('nui-tree-error', (e) => status(`Cannot read ${e.detail.entry.path}: ${e.detail.error}`));
@@ -955,25 +959,48 @@ function renderView() {
 	renderAsset();
 }
 
-function renderMarkdown() {
+async function renderMarkdown() {
+	await mintMarkdownMediaUrls();
 	const viewer = document.createElement('nui-markdown');
 	viewer.id = 'viewer';
 	// No frontmatter attribute — nui-markdown defaults to 'collapsed'
 	// (metadata card behind a closed <details>) since the md-blocks update.
 	const s = document.createElement('script');
-	s.type = 'text/markdown';
+	 s.type = 'text/markdown';
 	s.textContent = g.markdown;
 	viewer.appendChild(s);
 	el.page.appendChild(viewer);
+}
 
-	if (window.electron_helper) {
-		for (const img of viewer.querySelectorAll('img')) {
-			const src = img.getAttribute('src');
-			if (src && !/^(https?|data|raum|file):/i.test(src)) {
-				img.setAttribute('src', resolveImageUri(src));
-			}
-		}
+// Relative media in the markdown (images, audio/video links) points at files
+// beside the document — meaningless in both shells (raum:// needs a path, the
+// browser needs a blob URL from the FS-Access handle). Every candidate is
+// resolved BEFORE render into g.mediaUrlMap; the sync rewrite hook maps the
+// srcs during nui-markdown's render. A src that fails to resolve is absent
+// from the map: nui-markdown renders its broken-media marker — the honest
+// outcome, named in the status bar.
+const MEDIA_EXT = /\.(?:webp|png|jpe?g|gif|svg|avif|bmp|ico|mp3|wav|ogg|oga|flac|m4a|aac|opus|mp4|webm|ogv|mov|m4v|mkv)(?=$|\s|[?)])/i;
+
+async function mintMarkdownMediaUrls() {
+	g.mediaUrlMap = new Map();
+	const docPath = g.fileHandle?._nmdvPath || '';
+	const dir = docPath.split('/').slice(0, -1).filter(Boolean);
+	const dests = new Set();
+	for (const m of g.markdown.matchAll(/\]\(([^)\s]+)\)/g)) {
+		const dest = m[1];
+		if (MEDIA_EXT.test(dest) && !/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(dest)) dests.add(dest);
 	}
+	await Promise.all([...dests].map(async (dest) => {
+		try {
+			const [clean] = dest.split(/[?#]/);
+			const path = [...dir, ...clean.split('/').filter(Boolean)].join('/');
+			const handle = await g.fs.readFileHandle(path);
+			handle._nmdvPath = path;
+			g.mediaUrlMap.set(dest, await g.fs.assetUrl(path, handle));
+		} catch (err) {
+			status(`Media unavailable: ${dest} (${err.message})`);
+		}
+	}));
 }
 
 // Chrome per kind. The wrapper carries the kind as a class so all of this
