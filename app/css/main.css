@@ -359,13 +359,9 @@ nui-sidebar > nav {
 	flex: none;
 }
 
-/* Edit mode is modal: the editor takes the whole container, tree hidden.
-   display:none (not visibility) so the content column reclaims the space.
-   The editor's full-width case is the theme's own `breakout` attribute —
-   set on the element in setMode, not styled here. */
-nui-app.editing nui-sidebar {
-	display: none;
-}
+/* Edit mode is modal: the sidebar hide is the app shell's own sidebar-closed
+   state class, driven from setMode(). No app CSS participates. The editor's
+   full width is the theme's breakout attribute on the element. */
 
 nui-file-tree#file-tree {
 	flex: 1;

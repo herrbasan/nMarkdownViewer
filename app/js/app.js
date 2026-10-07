@@ -36,7 +36,7 @@ const g = {
 };
 
 const el = {};
-for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-collapse', 'btn-refresh', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-model', 'cfg-model-wrap', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status', 'cfg-startup', 'btn-startup-choose', 'btn-startup-clear', 'startup-path', 'cfg-update', 'btn-update-check', 'update-version']) {
+for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-collapse', 'btn-refresh', 'btn-sidebar-toggle', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-model', 'cfg-model-wrap', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status', 'cfg-startup', 'btn-startup-choose', 'btn-startup-clear', 'startup-path', 'cfg-update', 'btn-update-check', 'update-version']) {
 	el[id] = document.getElementById(id);
 }
 
@@ -889,9 +889,25 @@ function clearHoverUrl() {
 function setMode(mode) {
 	g.mode = mode;
 	const editing = mode === 'edit';
-	// Edit mode is modal: it takes over the whole container, file tree included.
-	// The class lives on the shell so layout stays a stylesheet decision.
-	document.querySelector('nui-app')?.classList.toggle('editing', editing);
+	// While editing, the tree is collapsed and stays collapsed: drop the
+	// shell's forced state (its content-offset rule dies with it, so the
+	// editor gets the full width) and hold the toggle button. Exit restores
+	// whatever the shell had.
+	const app = document.querySelector('nui-app');
+	const toggle = el['btn-sidebar-toggle'];
+	if (editing) {
+		g.sidebarWasForced = app.classList.contains('sidebar-forced');
+		app.classList.remove('sidebar-forced');
+		app.classList.add('sidebar-closed');
+		toggle.toggleAttribute('disabled', true);
+		toggle.querySelector('button').disabled = true;
+	} else if (g.sidebarWasForced !== undefined) {
+		app.classList.toggle('sidebar-forced', g.sidebarWasForced);
+		if (!g.sidebarWasForced) app.classList.remove('sidebar-closed');
+		toggle.toggleAttribute('disabled', false);
+		toggle.querySelector('button').disabled = false;
+		g.sidebarWasForced = undefined;
+	}
 	// The blocks editor must sit directly under nui-page (breakout contract),
 	// so it lives INSIDE the page and the main area stays visible; the rendered
 	// viewer is what gets tucked away.
