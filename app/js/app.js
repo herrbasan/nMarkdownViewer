@@ -1181,6 +1181,7 @@ function enterEdit() {
 		const path = /^[a-zA-Z]:[\\/]/.test(clean) || clean.startsWith('\\\\')
 			? clean.replace(/\\/g, '/')
 			: [...docPath.split(/[\\/]/).slice(0, -1).filter(Boolean), ...clean.split(/[\\/]/).filter(Boolean)].join('/');
+		try {
 			const handle = await g.fs.readFileHandle(path);
 			handle._nmdvPath = path;
 			return g.fs.assetUrl(path, handle);
