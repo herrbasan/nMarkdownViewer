@@ -174,6 +174,7 @@ async function boot() {
 	}
 
 	status(g.tts.available ? 'Ready. Open a folder to begin.' : `nSpeech unreachable at ${g.config.nspeech.baseUrl} — TTS disabled`);
+	await reopenDemoTree();
 
 	// Dev-only boot beacon: lets smoke tests verify Electron boots headlessly
 	if (g.mainEnv && !g.mainEnv.isPackaged) {
@@ -196,6 +197,23 @@ async function bootBrowser() {
 	const res = await fetch('../config.json');
 	if (!res.ok) throw new Error(`config.json unreachable (${res.status}) — run via scripts/serve.js`);
 	g.config = await res.json();
+	g.reopenDemo = true; // chrome is not ready yet; boot() opens the tree after appWindow
+}
+
+// Browser-phase startup folder: Chrome persists OPFS handles across reloads
+// (no permission grant needed — OPFS is origin-private). A demo tree seeded
+// there reopens like the Electron startup dir. Runs after the chrome exists.
+async function reopenDemoTree() {
+	if (!g.reopenDemo) return;
+	g.reopenDemo = false;
+	try {
+		const root = await navigator.storage.getDirectory();
+		const demo = await root.getDirectoryHandle('demo');
+		await rootTree({ name: 'demo', fs: fsAccessAdapter(demo), rootPath: '' });
+		await openFirstMarkdown();
+	} catch (err) {
+		if (err.name !== 'NotFoundError') throw err; // no demo tree — normal first run
+	}
 }
 
 async function bootElectron() {
