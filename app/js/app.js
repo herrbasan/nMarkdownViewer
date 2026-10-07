@@ -983,13 +983,13 @@ const MEDIA_EXT = /\.(?:webp|png|jpe?g|gif|svg|avif|bmp|ico|mp3|wav|ogg|oga|flac
 
 async function mintMarkdownMediaUrls() {
 	g.mediaUrlMap = new Map();
-	const docPath = g.fileHandle?._nmdvPath || '';
-	// Electron paths are backslashed — split on both separators. A doc without
-	// a directory (e.g. picked straight from a dialog) has no base for
-	// relative srcs: leave the map empty — nui-markdown renders its broken
-	// marker, which names the file, instead of a URL that points nowhere.
+	// Electron paths are backslashed — split on both separators. A document
+	// with no path at all has no base for relative srcs: leave the map empty —
+	// nui-markdown renders its broken marker, which names the file. A tree-root
+	// document ('name.md') has base '' and resolves fine.
+	const docPath = g.fileHandle?._nmdvPath;
+	if (!docPath) return;
 	const dir = docPath.split(/[\\/]/).slice(0, -1).filter(Boolean);
-	if (!dir.length) return;
 	const dests = new Set();
 	for (const m of g.markdown.matchAll(/\]\(([^)\s]+)\)/g)) {
 		const dest = m[1];
@@ -998,7 +998,10 @@ async function mintMarkdownMediaUrls() {
 	await Promise.all([...dests].map(async (dest) => {
 		try {
 			const [clean] = dest.split(/[?#]/);
-			const path = [...dir, ...clean.split(/[\\/]/).filter(Boolean)].join('/');
+			// Absolute paths resolve as themselves; relatives join the doc dir.
+			const path = /^[a-zA-Z]:[\\/]/.test(clean) || clean.startsWith('\\\\')
+				? clean.replace(/\\/g, '/')
+				: [...dir, ...clean.split(/[\\/]/).filter(Boolean)].join('/');
 			const handle = await g.fs.readFileHandle(path);
 			handle._nmdvPath = path;
 			g.mediaUrlMap.set(dest, await g.fs.assetUrl(path, handle));
@@ -1166,15 +1169,18 @@ function enterEdit() {
 	ed.resolveThumb = async (src) => {
 		if (/^(https?|data|blob|raum|file):/i.test(src)) return src;
 		if (!g.fs) return null;
-		// No doc dir → no base for a relative src. Decline: the editor shows
-		// its file-icon tile, and a driveless raum URL (which would resolve
-		// onto the APP's drive) is never minted.
-		const docPath = g.fileHandle?._nmdvPath || '';
-		const dir = docPath.split(/[\\/]/).slice(0, -1).filter(Boolean);
-		if (!dir.length) return null;
-		try {
-			const [clean] = src.split(/[?#]/);
-			const path = [...dir, ...clean.split(/[\\/]/).filter(Boolean)].join('/');
+		// A document with NO path at all (Electron picked-file edge) has no base
+		// for relative srcs — decline rather than mint a driveless raum URL that
+		// would resolve onto the app's drive. A tree-root document ('name.md')
+		// has base '' and resolves fine.
+		const docPath = g.fileHandle?._nmdvPath;
+		if (!docPath) return null;
+		const [clean] = src.split(/[?#]/);
+		// Absolute paths (drive-letter or UNC) resolve as themselves — joining
+		// them onto the doc dir produced mangled URLs (raum://x/blog/...D:/…).
+		const path = /^[a-zA-Z]:[\\/]/.test(clean) || clean.startsWith('\\\\')
+			? clean.replace(/\\/g, '/')
+			: [...docPath.split(/[\\/]/).slice(0, -1).filter(Boolean), ...clean.split(/[\\/]/).filter(Boolean)].join('/');
 			const handle = await g.fs.readFileHandle(path);
 			handle._nmdvPath = path;
 			return g.fs.assetUrl(path, handle);
