@@ -1155,6 +1155,25 @@ function enterEdit() {
 	const ed = document.createElement('nui-blocks-editor');
 	ed.setAttribute('preview', 'hidden');
 	ed.openMediaLibrary = pickMedia;
+	// Thumbnails are minted like the media itself: full src resolved through
+	// the fs adapter (blob URL in the browser, raum:// in Electron). The
+	// editor falls back to a file icon when this returns null.
+	ed.resolveThumb = async (src) => {
+		if (/^(https?|data|blob|raum|file):/i.test(src)) return src;
+		if (!g.fs) return null;
+		try {
+			const docPath = g.fileHandle?._nmdvPath || '';
+			const dir = docPath.split('/').slice(0, -1).filter(Boolean);
+			const [clean] = src.split(/[?#]/);
+			const path = [...dir, ...clean.split('/').filter(Boolean)].join('/');
+			const handle = await g.fs.readFileHandle(path);
+			handle._nmdvPath = path;
+			return g.fs.assetUrl(path, handle);
+		} catch (err) {
+			status(`No thumbnail: ${src} (${err.message})`);
+			return null;
+		}
+	};
 	ed.load(g.markdown);
 	wrap.appendChild(ed);
 	g.blocksEditor = ed;
