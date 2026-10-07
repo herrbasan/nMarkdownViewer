@@ -363,6 +363,13 @@ nui-sidebar > nav {
    state class, driven from setMode(). No app CSS participates. The editor's
    full width is the theme's breakout attribute on the element. */
 
+/* The blocks editor ships no horizontal padding (its spacing contract): the
+   host wrapper owns the gutter. The wrapper is the direct page child carrying
+   breakout; the editor nests inside it. */
+#edit-wrap[breakout] {
+	padding: var(--nui-space) var(--nui-space-double);
+}
+
 nui-file-tree#file-tree {
 	flex: 1;
 	min-height: 0;

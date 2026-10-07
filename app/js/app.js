@@ -590,7 +590,7 @@ function loadDocument(handle, name, text, kind = 'markdown') {
 	g.assetUrl = null;
 	g.docFragment = null;
 	g.markdown = text;
-	g.blocksEditor = null;
+	teardownEditSession();
 	g.dirty = false;
 	setMode('view');
 	renderView();
@@ -616,7 +616,7 @@ function loadAsset(handle, name, kind, url) {
 	g.assetUrl = url;
 	g.docFragment = null;
 	g.markdown = '';
-	g.blocksEditor = null;
+	teardownEditSession();
 	g.dirty = false;
 	setMode('view');
 	renderView();
@@ -643,7 +643,7 @@ function loadUnsupported(handle, name, path) {
 	g.assetUrl = null;
 	g.docFragment = null;
 	g.markdown = '';
-	g.blocksEditor = null;
+	teardownEditSession();
 	g.dirty = false;
 	setMode('view');
 	renderView();
@@ -915,9 +915,9 @@ function setMode(mode) {
 	if (viewer && viewer !== g.blocksEditor) viewer.hidden = editing;
 	if (g.blocksEditor) {
 		g.blocksEditor.hidden = !editing;
-		// The theme's breakout attribute lifts the page's max-width constraint
-		// on this child — the modal editor uses the width the tree gave back.
-		g.blocksEditor.toggleAttribute('breakout', editing);
+		// The wrapper is the direct page child: breakout (theme's max-width lift)
+		// goes on it, per the addon's placement doc — the editor nests inside.
+		g.editWrap.toggleAttribute('breakout', editing);
 	}
 	// Save only exists in edit mode — there's nothing to save otherwise
 	el['btn-save'].hidden = !editing;
@@ -1089,18 +1089,32 @@ function toggleEdit() {
 	else applyEdit();
 }
 
+// A discarded edit session leaves its wrapper behind; every load path calls
+// this before rendering the next document.
+function teardownEditSession() {
+	g.blocksEditor?.destroy();
+	g.editWrap?.remove();
+	g.editWrap = null;
+	g.blocksEditor = null;
+}
+
 function enterEdit() {
 	const viewer = document.getElementById('viewer');
 	if (viewer) viewer.hidden = true;
 	// Fresh editor per session: the component renders once from its own state,
-	// and a leftover instance would alias the previous document.
+	// and a leftover instance would alias the previous document. It ships no
+	// horizontal padding (spacing contract), so the padded wrapper owns the
+	// gutter — and carries breakout, being the direct page child.
+	const wrap = document.createElement('div');
+	wrap.id = 'edit-wrap';
 	const ed = document.createElement('nui-blocks-editor');
-	ed.id = 'blocks-editor';
 	ed.setAttribute('preview', 'hidden');
 	ed.openMediaLibrary = pickMedia;
 	ed.load(g.markdown);
+	wrap.appendChild(ed);
 	g.blocksEditor = ed;
-	el.page.appendChild(ed);
+	g.editWrap = wrap;
+	el.page.appendChild(wrap);
 	setMode('edit');
 }
 
@@ -1109,7 +1123,8 @@ function applyEdit() {
 	if (!ed) { setMode('view'); return; }
 	g.markdown = ed.serialize();
 	ed.destroy();
-	ed.remove();
+	g.editWrap?.remove();
+	g.editWrap = null;
 	g.blocksEditor = null;
 	if (!g.dirty) {
 		g.dirty = true;
