@@ -933,14 +933,24 @@ function setMode(mode) {
 		g.sidebarWasForced = app.classList.contains('sidebar-forced');
 		app.classList.remove('sidebar-forced');
 		app.classList.add('sidebar-closed');
+		// The lock is the shell component's own contract (nui-app sidebar-locked):
+		// while it holds, resize cannot re-derive sidebar state, the menu button
+		// no-ops, and the tree is visibility:hidden — the editor owns the viewport
+		// and the tree stays gone until the mode ends. The old approach (remove
+		// forced, add closed, disable the button) lost to the component's
+		// ResizeObserver on the first window resize.
+		app.setAttribute('sidebar-locked', '');
 		toggle.toggleAttribute('disabled', true);
 		toggle.querySelector('button').disabled = true;
-	} else if (g.sidebarWasForced !== undefined) {
-		app.classList.toggle('sidebar-forced', g.sidebarWasForced);
-		if (!g.sidebarWasForced) app.classList.remove('sidebar-closed');
-		toggle.toggleAttribute('disabled', false);
-		toggle.querySelector('button').disabled = false;
-		g.sidebarWasForced = undefined;
+	} else {
+		app.removeAttribute('sidebar-locked');
+		if (g.sidebarWasForced !== undefined) {
+			app.classList.toggle('sidebar-forced', g.sidebarWasForced);
+			if (!g.sidebarWasForced) app.classList.remove('sidebar-closed');
+			toggle.toggleAttribute('disabled', false);
+			toggle.querySelector('button').disabled = false;
+			g.sidebarWasForced = undefined;
+		}
 	}
 	// The blocks editor must sit directly under nui-page (breakout contract),
 	// so it lives INSIDE the page and the main area stays visible; the rendered
@@ -1178,8 +1188,9 @@ function enterEdit() {
 	// gutter — and carries breakout, being the direct page child.
 	const wrap = document.createElement('div');
 	wrap.id = 'edit-wrap';
+	// Split view by default: no preview attribute means the addon's own default,
+	// "inline" — canvas | divider | live preview, each pane scrolling itself.
 	const ed = document.createElement('nui-blocks-editor');
-	ed.setAttribute('preview', 'hidden');
 	ed.openMediaLibrary = pickMedia;
 	// Thumbnails are minted like the media itself: full src resolved through
 	// the fs adapter (blob URL in the browser, raum:// in Electron). The

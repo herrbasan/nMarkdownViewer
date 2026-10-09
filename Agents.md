@@ -260,6 +260,22 @@ viewer itself uses, so a linked `.png` opens the way a dropped `.png` does.
 
 - **The file on disk is the only source of truth for the viewer.** `g.markdown`
   only changes on Save or document load — never on entering/leaving edit mode.
+- **Edit mode owns the viewport.** `setMode('edit')` sets `sidebar-locked` on
+  the shell (nui_wc2 5da4083): resize cannot re-derive sidebar state, the menu
+  button no-ops, the tree is `visibility: hidden` — not "closed until a resize",
+  which is what the old remove-forced/add-closed approach degenerated into.
+  The previous state (`g.sidebarWasForced`) is restored on exit.
+- **The editor opens in split view by default.** No `preview` attribute on the
+  editor — the addon's own default is `inline` (canvas | divider | live
+  preview). The switcher (hidden / own window) still works.
+- **Split view: each pane scrolls itself; the page does not scroll.** The
+  height chain (`md-main → nui-page → #edit-wrap → editor → workspace`) is
+  bound in `main.css` under `@media (min-width: 1101px)` guarded by
+  `:has(.editor-workspace[data-preview-mode="inline"])` — below that width, or
+  in hidden/window preview modes, ordinary page scrolling returns. The wrap's
+  gutter is asymmetric on purpose: `--nui-space-double` on the left (the cards
+  are a toolbox), none on the right (the preview is the document; its
+  scrollbar belongs on the window edge).
 - **Leaving edit mode discards, silently.** Switching documents discards.
   Closing the window discards. No dialogs anywhere.
 - **Save serializes the LIVE editor** (`g.blocksEditor.serialize()`), never

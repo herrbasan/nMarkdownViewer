@@ -370,6 +370,34 @@ nui-sidebar > nav {
 	padding: var(--nui-space) var(--nui-space-double);
 }
 
+/* Split view (blocks editor, inline preview) owns the viewport: the shell's
+   scroller (nui-main) stops scrolling and hands its height down through
+   nui-page and #edit-wrap; the addon's own rules at this same breakpoint
+   bound the workspace and give each pane its own overflow-y. The wrapper
+   steps aside entirely — the addon runs split view edge-to-edge and spaces
+   the panes itself. Below 1101px the panes stack and ordinary page scrolling
+   returns, so the chain unbinds with the addon's media query. Preview modes
+   hidden/window leave the chain too: the full-width canvas scrolls the page. */
+@media (min-width: 1101px) {
+	nui-main#md-main:has(.editor-workspace[data-preview-mode="inline"]) {
+		overflow: hidden;
+	}
+
+	nui-main#md-main:has(.editor-workspace[data-preview-mode="inline"]) > nui-page {
+		height: 100%;
+	}
+
+	#edit-wrap:has(> nui-blocks-editor .editor-workspace[data-preview-mode="inline"]) {
+		height: 100%;
+		/* Gutter where the scrollbar is not. Left: the editor cards are a
+		   toolbox and get the app's normal --nui-space-double inset — flush
+		   against the window edge they read as cut off. Right: none — the
+		   preview is the document (its bands span the pane) and its scrollbar
+		   is viewport chrome that belongs on the window edge. */
+		padding: 0 0 0 var(--nui-space-double);
+	}
+}
+
 nui-file-tree#file-tree {
 	flex: 1;
 	min-height: 0;
