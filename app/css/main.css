@@ -389,11 +389,10 @@ nui-sidebar > nav {
 
 	#edit-wrap:has(> nui-blocks-editor .editor-workspace[data-preview-mode="inline"]) {
 		height: 100%;
-		/* Gutter where the scrollbar is not. Left: the editor cards are a
-		   toolbox and get the app's normal --nui-space-double inset — flush
-		   against the window edge they read as cut off. Right: none — the
-		   preview is the document (its bands span the pane) and its scrollbar
-		   is viewport chrome that belongs on the window edge. */
+		/* Gutter on the left only: the canvas cards are a toolbox; the preview
+		   is the document and runs flush to the window edge, its scrollbar on
+		   it. The seam INSIDE the canvas pane (cards to their own scrollbar,
+		   beside the divider) is the addon's — it insets the cards there. */
 		padding: 0 0 0 var(--nui-space-double);
 	}
 }
