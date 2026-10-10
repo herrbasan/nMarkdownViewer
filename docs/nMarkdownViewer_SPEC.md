@@ -209,4 +209,5 @@ it and closed.
 | 2026-10-07 | Thumbnails resolve via a host hook too (`resolveThumb`) | Local-file hosts mint blob/`raum://` URLs; hosts without cheap thumbs decline and get icon tiles |
 | 2026-10-07 | Unsaved-changes policy: discard everywhere, silently | User decision — "If you don't save and you leave edit mode nothing is stored, changes discarded." No dialogs; the file on disk is the only truth until Save |
 | 2026-10-07 | Edit mode is modal (tree hidden, breakout width) | Editing wants the whole container; the layout engine's own `breakout` + the shell's sidebar state do it — no app CSS fights the components |
+| 2026-10-10 | Reading width is a config-pane slider (pref `readingWidth`, 36–80 rem, default 62) | One token (`--space-page-maxwidth`, set inline on `nui-app`) drives viewer, blocks-editor preview AND the pop-out (which copies the shell's `--` props) — the old static `content-width` attribute is gone; the pref is the single owner |
 | 2026-10-07 | Absolute media paths vouched via `setMarkdownMediaTrust` | A desktop shell renders the user's own disk; a drive path is a picked file, not an injection. Web-served docs keep the strict §8 boundary |

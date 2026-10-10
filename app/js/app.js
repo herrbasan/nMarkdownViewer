@@ -37,7 +37,7 @@ const g = {
 };
 
 const el = {};
-for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-collapse', 'btn-refresh', 'btn-sidebar-toggle', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-model', 'cfg-model-wrap', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-status', 'cfg-startup', 'btn-startup-choose', 'btn-startup-clear', 'startup-path', 'cfg-update', 'btn-update-check', 'update-version']) {
+for (const id of ['doc-title', 'btn-listen', 'btn-edit', 'btn-save', 'btn-open-folder', 'btn-open-file', 'btn-collapse', 'btn-refresh', 'btn-sidebar-toggle', 'tree-search', 'file-tree', 'page', 'editor', 'cfg-engine', 'cfg-model', 'cfg-model-wrap', 'cfg-voice', 'cfg-speed', 'cfg-clean', 'cfg-stitch', 'cfg-width', 'cfg-width-value', 'cfg-status', 'cfg-startup', 'btn-startup-choose', 'btn-startup-clear', 'startup-path', 'cfg-update', 'btn-update-check', 'update-version']) {
 	el[id] = document.getElementById(id);
 }
 
@@ -69,6 +69,21 @@ async function boot() {
 	// Two slots: the message (left) and the hovered link's destination (right),
 	// as a browser's status bar does. A flex row, so the URL takes the slack.
 	g.statusBar.innerHTML = '<span id="status-text"></span><span id="hover-url" hidden></span>';
+
+	// Reading measure: the markdown column width, shared by the viewer and the
+	// blocks-editor preview. One token drives both — nui-page children and the
+	// preview's blocks both constrain with var(--space-page-maxwidth) — set
+	// inline on the shell, the element whose -- properties the pop-out preview
+	// copies into its window, so all three surfaces stay in agreement.
+	applyReadingWidth(prefs.get('readingWidth'));
+	const widthInput = el['cfg-width'].querySelector('input');
+	widthInput.value = g.readingWidth;
+	el['cfg-width-value'].textContent = `${g.readingWidth} rem`;
+	widthInput.addEventListener('input', () => {
+		applyReadingWidth(parseFloat(widthInput.value));
+		el['cfg-width-value'].textContent = `${g.readingWidth} rem`;
+	});
+	widthInput.addEventListener('change', () => prefs.set('readingWidth', g.readingWidth));
 
 	// Full-window drop overlay. Must be created AFTER appWindow(): with the
 	// default target it wipes document.body, destroying any static markup.
@@ -370,6 +385,18 @@ async function openFolder() {
 	}
 	await rootTree({ name: handle.name, fs: fsAccessAdapter(handle), rootPath: '' });
 	await openFirstMarkdown();
+}
+
+// ################################# READING WIDTH (config pane slider)
+// rem; absent on first run → the measure the shell's old content-width
+// attribute pinned (62rem).
+const READING_WIDTH_DEFAULT = 62;
+
+function applyReadingWidth(rem) {
+	g.readingWidth = Number.isFinite(rem) ? rem : READING_WIDTH_DEFAULT;
+	// No space before the unit — "40 rem" is invalid CSS and silently drops
+	// the whole declaration; only "40rem" constrains.
+	document.querySelector('nui-app').style.setProperty('--space-page-maxwidth', `${g.readingWidth}rem`);
 }
 
 // ################################# STARTUP FOLDER (Electron only)

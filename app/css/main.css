@@ -601,6 +601,14 @@ nui-slider.tts-player-scrub .tts-player-scrub-buffer {
 	color: var(--text-color-dim);
 }
 
+/* Live readout under a config-pane slider; tabular-nums keeps the digits
+   from wiggling while the value is dragged. */
+.config-value {
+	font-size: var(--font-size-xsmall);
+	color: var(--text-color-dim);
+	font-variant-numeric: tabular-nums;
+}
+
 /* Status bar content (chrome provides the bar itself) */
 #status-text {
 	overflow: hidden;
