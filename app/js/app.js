@@ -196,7 +196,7 @@ async function boot() {
 			try {
 				const st = await g.nfs.stat(dir);
 				if (!st.isDirectory()) throw new Error('not a directory');
-				await rootTree({ name: g.npath.basename(dir), fs: nativeFsAdapter(), rootPath: dir });
+				await rootTree({ name: g.npath.basename(dir) || dir, fs: nativeFsAdapter(), rootPath: dir });
 				await openFirstMarkdown();
 			} catch (err) {
 				status(`Startup folder unavailable: ${dir} (${err.message})`);
@@ -369,7 +369,7 @@ async function openFolder() {
 		const result = await electron_helper.dialog.showOpenDialog({ properties: ['openDirectory'], title: 'Open Folder' });
 		if (result.canceled || !result.filePaths?.length) return;
 		const dir = result.filePaths[0];
-		await rootTree({ name: g.npath.basename(dir), fs: nativeFsAdapter(), rootPath: dir });
+		await rootTree({ name: g.npath.basename(dir) || dir, fs: nativeFsAdapter(), rootPath: dir });
 		await openFirstMarkdown();
 		return;
 	}
@@ -590,7 +590,7 @@ async function onDrop(e) {
 		const st = await g.nfs.stat(p);
 		if (st.isDirectory()) {
 			if (!await confirmDiscard()) return;
-			await rootTree({ name: g.npath.basename(p), fs: nativeFsAdapter(), rootPath: p });
+			await rootTree({ name: g.npath.basename(p) || p, fs: nativeFsAdapter(), rootPath: p });
 			await openFirstMarkdown();
 			return;
 		}
@@ -599,7 +599,7 @@ async function onDrop(e) {
 			return;
 		}
 		const dir = g.npath.dirname(p);
-		await rootTree({ name: g.npath.basename(dir), fs: nativeFsAdapter(), rootPath: dir }, p);
+		await rootTree({ name: g.npath.basename(dir) || dir, fs: nativeFsAdapter(), rootPath: dir }, p);
 		return;
 	}
 
