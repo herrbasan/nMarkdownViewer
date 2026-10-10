@@ -8,6 +8,13 @@ if (require('electron-squirrel-startup')) return;
 
 const { app, Menu, screen, ipcMain, shell, BrowserWindow } = require('electron');
 const path = require('node:path');
+
+// Dev-only: Chromium's remote debugging port, so an agent (or a human) can
+// attach Playwright/CDP to the REAL shell — the one with files, raum:// and
+// prefs.json — instead of reasoning from the browser harness, which shares
+// none of those. Connect with playwright.chromium.connectOverCDP(
+// 'http://127.0.0.1:9222'). Packaged builds never open the port.
+if (!app.isPackaged) app.commandLine.appendSwitch('remote-debugging-port', '9222');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');

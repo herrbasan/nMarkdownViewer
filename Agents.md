@@ -19,12 +19,25 @@ milestone plan, and decision log. Keep it current as decisions are made.
 ## Run
 
 ```
-node scripts/serve.js     →  http://127.0.0.1:5581/
+node scripts/serve.js     →  http://127.0.0.1:5581/   (browser harness)
+npx electron-forge start -- "D:\absolute\path\to\file.md"   (Electron — file arg MUST be absolute)
 ```
 
 Chrome/Edge only (File System Access API). nSpeech endpoint is configured in
 [config.json](config.json) (`nspeech.baseUrl`); if unreachable, the app runs
 with TTS disabled and says so in the status bar.
+
+**Observing the Electron shell (dev):** unpackaged builds open Chromium's
+remote debugging port **9222** (app/js/main.js). `scripts/cdp.js` is a
+zero-dep CDP client (Node ≥ 22 native WebSocket) — use it instead of guessing:
+
+```
+node scripts/cdp.js --list
+node scripts/cdp.js --eval "document.getElementById('status-text').textContent"
+node scripts/cdp.js --shot out/shot.png     # then VIEW the png — never measure blind
+```
+
+Several windows open (linked documents) → `--url <substr>` picks the target.
 
 ## Hard Rules
 
@@ -241,10 +254,38 @@ viewer itself uses, so a linked `.png` opens the way a dropped `.png` does.
 - Status bar shows the hovered destination in a second slot (`#hover-url`),
   resolved to an absolute path so it matches what the click will do.
 
+## Two Shells — Pick by Symptom Domain
+
+The app runs in two shells that share the stage ([app/js/app.js](app/js/app.js))
+but NOT the environment. Debugging in the wrong one is this repo's most
+expensive mistake (2026-10-10: harness artifacts — transient geometry, an
+empty document, a small viewport — were diagnosed as a broken editor layout;
+the Electron app was correct the whole time).
+
+| Concern | Browser harness | Electron (target) |
+|---|---|---|
+| Files | FS Access handles, no real paths | real paths, `raum://` media |
+| Dialogs | picker APIs (flaky in embedded browsers) | native OS dialogs |
+| Persistence | localStorage + OPFS demo tree | prefs.json + startup folder |
+| Windows | single tab | multi-window, frameless chrome |
+| Rendering, markdown, module parse | identical engine — harness is fine | identical |
+
+**The rule: the symptom's domain picks the shell.** Anything touching files,
+paths, media URLs, startup state, or window behavior is an Electron question
+until proven otherwise — reproduce it there (CDP workflow above) before
+forming a theory. Pure rendering and parse errors are safe in the harness.
+
+**Harness lies to expect:** its viewport is smaller than any real window
+(overlay panes park offscreen); geometry read mid-transition (sidebar close)
+is transient, not settled — re-measure after settling; synthetic input lands
+on elements a real pointer cannot reach; the OPFS demo tree must be seeded by
+hand. The Electron shell has none of these, and since it is observable via
+CDP, "the harness is easier to drive" is no longer a reason to use it.
+
 ## Debugging Gotchas (learned the hard way)
 
 - **`SyntaxError: Unexpected token ','` (bare, no stack) = a *parse* error in a JS file, NOT an Electron/preload/contextIsolation issue.** Don't blame the shell or the `electron_helper` submodule. Find the offending file:line.
-- **Reproduce in the browser, not Electron.** `node scripts/serve.js` → open `http://127.0.0.1:5581/` (Chrome). Read the exact location via CDP `Runtime.exceptionThrown` (`url`, `lineNumber`, `columnNumber`) — Playwright's `pageerror` gives the message but often no stack for parse errors. The Electron renderer parses the module graph identically to the browser, so if it breaks in Electron it breaks here too.
+- **Parse errors reproduce identically in both shells** (same module graph, same engine) — for those the browser harness is the faster oracle: `node scripts/serve.js` → open `http://127.0.0.1:5581/` (Chrome). Read the exact location via CDP `Runtime.exceptionThrown` (`url`, `lineNumber`, `columnNumber`) — Playwright's `pageerror` gives the message but often no stack for parse errors. For anything beyond parse errors, see "Two Shells" above.
 - **`node --check` is NOT the oracle.** It checks CJS script syntax; it does not reliably reproduce the ESM-module parse the browser uses, so it can pass while the page still fails to load. The browser/Electron load is the real oracle.
 - **A multi-region edit to `app.js` can silently corrupt a *different* region** — a residual fragment glued into a function you didn't intend to touch (e.g. `=> {, .dirname(filePath);` on the `os-open-file` handler). After any edit, re-read the entire enclosing function, not just the span you think you changed.
 - **`app.js` is the stage; Electron main is a thin shell.** A startup failure is far more likely a typo in `app/js/app.js` than in `app/js/main.js` or the `electron_helper` submodule.
