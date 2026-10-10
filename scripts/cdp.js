@@ -91,7 +91,11 @@ async function main() {
 		return;
 	}
 
-	const expr = flag('--eval');
+	const exprArg = flag('--eval');
+	const exprFile = flag('--eval-file');
+	// Complex probes go in a FILE — quoting a multi-line script through a
+	// shell command line re-parses it and breaks in ways that blame the JS.
+	const expr = exprArg || (exprFile ? fs.readFileSync(exprFile, 'utf8') : null);
 	const shot = flag('--shot');
 	if (!expr && !shot) {
 		console.log('Usage: node scripts/cdp.js --list | --eval <js> | --shot <file.png> [--url <substr>]');
