@@ -150,6 +150,17 @@ identically because there is only one answer to ask.
 - **Image, video and text ask for `breakout`.** That is the theme's own way to
   let a child of `nui-page` span the full content width instead of being
   letterboxed into the reading measure.
+- **The markdown viewer asks for `breakout` too, and the reading measure lives
+  on the CONTENT, not the container.** Blocks documents wrap their sections in
+  `<main class="nui-blocks-main">` inside `nui-markdown`; clamping that wrapper
+  to the measure kills cover/banner bleed (measured 2026-10-10: cover wrongly
+  shrunk 1403→656px). The rule in main.css measures the viewer's *direct*
+  children and excludes `.nui-blocks-main`, `.nui-blocks-section` and the
+  frontmatter details — blocks documents get their measure per block from the
+  theme. The editor's live preview is in the same selector, so a document reads
+  identically in both views; the pop-out preview window inherits it with the
+  stylesheet. Verify with geometry, not eyeballs: cover width ≈ pane width,
+  body width = `readingWidth`rem.
 - **`nui-media-player` has no intrinsic height and ships `object-fit: cover`.**
   Two things follow. The card is a grid (`minmax(0, 1fr) auto`) so the player
   stretches to the pane as a grid item — no styling of the component needed.
