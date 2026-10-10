@@ -1012,6 +1012,13 @@ async function renderMarkdown() {
 	await mintMarkdownMediaUrls();
 	const viewer = document.createElement('nui-markdown');
 	viewer.id = 'viewer';
+	// Full-width, like the editor's wrapper: a page child WITHOUT breakout is
+	// clipped to the reading measure by the theme, which kills blocks bleed —
+	// cover/banner sections could never out-span it (the editor preview could,
+	// so viewer and preview disagreed). The measure now lives at the content
+	// level: the theme's block rule for sections, one main.css rule for plain
+	// markdown.
+	viewer.setAttribute('breakout', '');
 	// No frontmatter attribute — nui-markdown defaults to 'collapsed'
 	// (metadata card behind a closed <details>) since the md-blocks update.
 	const s = document.createElement('script');

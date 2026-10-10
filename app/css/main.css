@@ -440,9 +440,19 @@ body.electron #btn-open-file {
 	margin-inline: auto;
 }
 
-/* nui-theme.css owns the host box (display: block, width: 100%) and
-   nui-page's child rule owns padding and max-width — nothing to add there.
-   Center the reading column in the remaining space. */
+/* The viewer is a breakout page child (set in renderMarkdown) so blocks
+   cover/banner sections can span the pane — same model as the editor preview.
+   Blocks documents wrap their sections in <main class="nui-blocks-main"> and
+   get their measure per block from the theme; that wrapper must NOT be
+   clamped here, or covers lose their bleed. Plain markdown renders bare
+   (no blocks structure), so its direct children get the same measure and
+   centering here. The editor's live preview is included so a plain document
+   reads identically in both — and the pop-out inherits this sheet wholesale. */
+:is(nui-markdown#viewer, nui-markdown[data-be="live-preview"]) > :not(.nui-blocks-main):not(.nui-blocks-section):not(.nui-md-frontmatter-details) {
+	max-width: var(--nui-md-content-maxwidth, var(--space-page-maxwidth));
+	margin-inline: auto;
+}
+
 #viewer {
 	margin-inline: auto;
 }
